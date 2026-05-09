@@ -1,0 +1,21 @@
+.map-container {
+    height: calc(100vh - 100px);
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.leaflet-container {
+    height: 100%;
+    width: 100%;
+}
+
+.marker-label {
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 12px;
+    font-weight: bold;
+}
