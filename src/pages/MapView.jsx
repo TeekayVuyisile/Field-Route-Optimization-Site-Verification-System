@@ -5,11 +5,16 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import useTripStore from '../store/useTripStore';
 import { useNavigate } from 'react-router-dom';
-import { FaCheckCircle, FaRegCircle, FaRoute, FaSync, FaSave, FaVolumeUp, FaVolumeMute, FaLocationArrow } from 'react-icons/fa';
+import { 
+    FaCheckCircle, FaRegCircle, FaRoute, FaSync, FaSave, 
+    FaVolumeUp, FaVolumeMute, FaLocationArrow, FaPlus, 
+    FaEdit, FaTrash, FaCrosshairs 
+} from 'react-icons/fa';
 import { getOptimizedRoute, getDirections } from '../services/orsService';
 import { supabase } from '../lib/supabase';
 import { toast } from 'react-toastify';
 import { speak, calculateDistance } from '../utils/navigationUtils';
+import ManualSiteModal from '../components/ManualSiteModal';
 import debounce from 'lodash/debounce';
 import './MapView.css';
 
@@ -59,7 +64,7 @@ const RecenterAutomatically = ({ lat, lng }) => {
 };
 
 const MapView = () => {
-    const { currentTrip, sites, setSites, updateSite } = useTripStore();
+    const { currentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
     const navigate = useNavigate();
     const [userPos, setUserPos] = useState(null);
     const [routeData, setRouteData] = useState(null);
@@ -69,6 +74,34 @@ const MapView = () => {
     const [voiceEnabled, setVoiceEnabled] = useState(false);
     const [lastAnnouncedId, setLastAnnouncedId] = useState(null);
     const [showSidebar, setShowSidebar] = useState(true);
+    
+    // Site Modal States
+    const [showModal, setShowModal] = useState(false);
+    const [editSiteData, setEditSiteData] = useState(null);
+
+    // Navigation State
+    const [navigationSteps, setNavigationSteps] = useState([]);
+    const [currentStepIndex, setCurrentStepIndex] = useState(0);
+
+    const refreshGPS = useCallback(() => {
+        if (!navigator.geolocation) {
+            toast.error("Geolocation is not supported by this browser.");
+            return;
+        }
+
+        toast.info("Updating GPS position...");
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+                toast.success("Position updated!");
+            },
+            (err) => {
+                console.error(err);
+                toast.error(`GPS Error: ${err.message}`);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    }, []);
 
     // Watch user position & Proximity Alert
     useEffect(() => {
@@ -79,11 +112,11 @@ const MapView = () => {
                 const currentLng = pos.coords.longitude;
                 setUserPos({ lat: currentLat, lng: currentLng });
 
-                // Check proximity to next site
+                // Proximity Alert for Site Destination
                 if (nextSite && voiceEnabled && nextSite.id !== lastAnnouncedId) {
                     const dist = calculateDistance(currentLat, currentLng, nextSite.latitude, nextSite.longitude);
-                    if (dist < 100) { // 100 meters
-                        speak(`Approaching destination: ${nextSite.name}. You are within 100 meters.`);
+                    if (dist < 100) {
+                        speak(`Approaching destination: ${nextSite.name}`);
                         setLastAnnouncedId(nextSite.id);
                     }
                 }
@@ -97,6 +130,7 @@ const MapView = () => {
     const optimizeRoute = async () => {
         if (!userPos || sites.length === 0) {
             toast.warn("Waiting for GPS location...");
+            refreshGPS();
             return;
         }
 
@@ -116,33 +150,25 @@ const MapView = () => {
             
             const target = optimizedSites[0];
             setNextSite(target);
-            if (voiceEnabled) {
-                speak(`Route optimized. Your next destination is ${target.name}.`);
-            }
+            
+            // Route geometry
+            let routeCoords = [
+                [userPos.lng, userPos.lat],
+                ...optimizedSites.map(s => [s.longitude, s.latitude])
+            ];
 
-            // 3. Get route geometry
-            let routeCoords = [];
-            if (optimizedSites.length > 0 && optimizedSites.length < 50) {
-                // Full route for small datasets
-                routeCoords = [
-                    [userPos.lng, userPos.lat],
-                    ...optimizedSites.map(s => [s.longitude, s.latitude])
-                ];
-                toast.info("Full optimized route calculated.");
-            } else if (optimizedSites.length >= 50) {
-                // Only route to the NEXT destination for large datasets
-                routeCoords = [
-                    [userPos.lng, userPos.lat],
-                    [optimizedSites[0].longitude, optimizedSites[0].latitude]
-                ];
-                toast.info("Large dataset: Showing route to next destination only.");
-            }
+            const directionsResult = await getDirections(routeCoords);
+            setRouteData(directionsResult);
 
-            if (routeCoords.length > 0) {
-                const directions = await getDirections(routeCoords);
-                setRouteData(directions);
-            } else {
-                setRouteData(null);
+            // Extract turn-by-turn steps
+            if (directionsResult.features && directionsResult.features[0].properties.segments) {
+                const allSteps = directionsResult.features[0].properties.segments.flatMap(s => s.steps);
+                setNavigationSteps(allSteps);
+                setCurrentStepIndex(0);
+                
+                if (voiceEnabled && allSteps.length > 0) {
+                    speak(`Navigation started. ${allSteps[0].instruction}`);
+                }
             }
             
             toast.success("Route optimized!");
@@ -153,23 +179,16 @@ const MapView = () => {
         }
     };
 
-    // Autosave functionality
     const debouncedSave = useCallback(
         debounce(async (siteId, updates) => {
-            if (!siteId || siteId.length > 36) return; // Skip temporary UUIDs
-            
+            if (!siteId || siteId.length !== 36) return;
             try {
                 setSavingStatus('Saving...');
-                const { error } = await supabase
-                    .from('sites')
-                    .update(updates)
-                    .eq('id', siteId);
-                
+                const { error } = await supabase.from('sites').update(updates).eq('id', siteId);
                 if (error) throw error;
-                setSavingStatus('All changes saved');
+                setSavingStatus('Saved');
                 setTimeout(() => setSavingStatus(''), 2000);
             } catch (err) {
-                console.error('Autosave error:', err.message);
                 setSavingStatus('Save failed');
             }
         }, 2000),
@@ -179,10 +198,62 @@ const MapView = () => {
     const handleUpdateSite = (id, updates) => {
         const index = sites.findIndex(s => s.id === id);
         updateSite(index, updates);
-        
-        // If the site exists in Supabase (has a valid UUID from DB), autosave it
-        if (typeof id === 'string' && id.length === 36 && !id.startsWith('temp-')) {
+        if (typeof id === 'string' && id.length === 36) {
             debouncedSave(id, updates);
+        }
+    };
+
+    const handleDeleteSite = async (id) => {
+        if (!window.confirm("Exclude this site?")) return;
+        try {
+            const index = sites.findIndex(s => s.id === id);
+            removeSite(index);
+            if (typeof id === 'string' && id.length === 36) {
+                await supabase.from('sites').delete().eq('id', id);
+            }
+            toast.success("Site excluded");
+        } catch (error) {
+            toast.error("Delete failed");
+        }
+    };
+
+    const handleAddSite = async (newSite) => {
+        try {
+            if (currentTrip?.id) {
+                const { data, error } = await supabase.from('sites').insert([{
+                    trip_id: currentTrip.id,
+                    name: newSite.name,
+                    latitude: newSite.latitude,
+                    longitude: newSite.longitude,
+                    order_index: sites.length,
+                    is_checked: false
+                }]).select().single();
+                if (error) throw error;
+                setSites([...sites, data]);
+            } else {
+                setSites([...sites, newSite]);
+            }
+            toast.success("Site added");
+        } catch (error) {
+            toast.error("Failed to add site");
+        }
+    };
+
+    const handleSaveEdit = async (updatedSite) => {
+        try {
+            const index = sites.findIndex(s => s.id === updatedSite.id);
+            updateSite(index, updatedSite);
+            if (typeof updatedSite.id === 'string' && updatedSite.id.length === 36) {
+                const { error } = await supabase.from('sites').update({
+                    name: updatedSite.name,
+                    latitude: updatedSite.latitude,
+                    longitude: updatedSite.longitude
+                }).eq('id', updatedSite.id);
+                if (error) throw error;
+            }
+            toast.success("Site updated");
+        } catch (error) {
+            toast.error("Update failed");
         }
     };
 
@@ -190,7 +261,7 @@ const MapView = () => {
         return (
             <Container className="text-center mt-5">
                 <h3>No active trip to map</h3>
-                <Button onClick={() => navigate('/')}>Back to Dashboard</Button>
+                <Button onClick={() => navigate('/')}>Dashboard</Button>
             </Container>
         );
     }
@@ -198,32 +269,60 @@ const MapView = () => {
     const center = userPos ? [userPos.lat, userPos.lng] : [sites[0].latitude, sites[0].longitude];
 
     return (
-        <Container fluid className="px-2 px-md-4">
+        <Container fluid className="px-2 px-md-4 position-relative">
+            {/* Turn-by-Turn Navigation Banner */}
+            {navigationSteps.length > 0 && navigationSteps[currentStepIndex] && (
+                <div className="nav-banner bg-dark text-white p-3 rounded shadow-lg d-flex align-items-center mb-3">
+                    <div className="me-3">
+                        <FaLocationArrow size={32} className="text-primary" />
+                    </div>
+                    <div className="flex-grow-1">
+                        <div className="fw-bold fs-5">{navigationSteps[currentStepIndex].instruction}</div>
+                        <small className="text-light opacity-75">
+                            {navigationSteps[currentStepIndex].distance > 1000 
+                                ? `${(navigationSteps[currentStepIndex].distance / 1000).toFixed(1)} km` 
+                                : `${navigationSteps[currentStepIndex].distance.toFixed(0)} m`} remaining in this step
+                        </small>
+                    </div>
+                    <div className="d-flex flex-column gap-1">
+                        <Button 
+                            variant="primary" 
+                            size="sm"
+                            onClick={() => setCurrentStepIndex(prev => Math.min(prev + 1, navigationSteps.length - 1))}
+                        >
+                            Next
+                        </Button>
+                        <Button 
+                            variant="outline-light" 
+                            size="sm"
+                            onClick={() => setCurrentStepIndex(prev => Math.max(0, prev - 1))}
+                        >
+                            Back
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             <Row className="mb-3 align-items-center">
                 <Col>
-                    <h3 className="mb-0 text-truncate" style={{ maxWidth: '250px' }}>{currentTrip.title}</h3>
-                    {savingStatus && <small className="text-muted"><FaSync className="fa-spin me-1" />{savingStatus}</small>}
+                    <div className="d-flex align-items-center">
+                        <h3 className="mb-0 text-truncate me-2" style={{ maxWidth: '200px' }}>{currentTrip.title}</h3>
+                        <Button variant="outline-primary" size="sm" className="rounded-circle" onClick={() => { setEditSiteData(null); setShowModal(true); }}>
+                            <FaPlus />
+                        </Button>
+                    </div>
+                    {savingStatus && <small className="text-muted ms-2">{savingStatus}</small>}
                 </Col>
                 <Col xs="auto" className="d-flex align-items-center">
-                    <Button 
-                        variant={voiceEnabled ? "success" : "outline-secondary"} 
-                        className="me-2 rounded-circle shadow-sm"
-                        onClick={() => setVoiceEnabled(!voiceEnabled)}
-                        title={voiceEnabled ? "Disable Voice Guidance" : "Enable Voice Guidance"}
-                    >
+                    <Button variant="outline-info" className="me-2 rounded-circle" onClick={refreshGPS} title="Refresh GPS">
+                        <FaCrosshairs />
+                    </Button>
+                    <Button variant={voiceEnabled ? "success" : "outline-secondary"} className="me-2 rounded-circle" onClick={() => setVoiceEnabled(!voiceEnabled)}>
                         {voiceEnabled ? <FaVolumeUp /> : <FaVolumeMute />}
                     </Button>
-                    <Button 
-                        variant="primary" 
-                        className="me-2 rounded-pill shadow-sm d-none d-md-block" 
-                        onClick={optimizeRoute} 
-                        disabled={isOptimizing || !userPos}
-                    >
+                    <Button variant="primary" className="rounded-pill px-4" onClick={optimizeRoute} disabled={isOptimizing || !userPos}>
                         {isOptimizing ? <Spinner size="sm" /> : <FaRoute className="me-2" />}
                         Optimize
-                    </Button>
-                    <Button variant="light" className="rounded-circle shadow-sm d-md-none" onClick={() => setShowSidebar(!showSidebar)}>
-                        <FaLocationArrow />
                     </Button>
                 </Col>
             </Row>
@@ -233,15 +332,8 @@ const MapView = () => {
                     <div className="map-container position-relative">
                         <MapContainer center={center} zoom={13} zoomControl={false}>
                             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                            
-                            {userPos && (
-                                <Marker position={[userPos.lat, userPos.lng]} icon={blueIcon}>
-                                    <Popup>Your Location</Popup>
-                                </Marker>
-                            )}
-
+                            {userPos && <Marker position={[userPos.lat, userPos.lng]} icon={blueIcon} />}
                             {routeData && <GeoJSON data={routeData} style={{ color: '#3388ff', weight: 5, opacity: 0.7 }} />}
-
                             {sites.map((site) => (
                                 <Marker 
                                     key={site.id} 
@@ -250,81 +342,63 @@ const MapView = () => {
                                 >
                                     <Popup minWidth={200}>
                                         <div className="p-1">
-                                            <h6>{site.name}</h6>
+                                            <div className="d-flex justify-content-between align-items-center mb-2">
+                                                <h6 className="mb-0">{site.name}</h6>
+                                                <div>
+                                                    <Button variant="link" size="sm" className="p-0 me-2" onClick={() => { setEditSiteData(site); setShowModal(true); }}>
+                                                        <FaEdit />
+                                                    </Button>
+                                                    <Button variant="link" size="sm" className="text-danger p-0" onClick={() => handleDeleteSite(site.id)}>
+                                                        <FaTrash />
+                                                    </Button>
+                                                </div>
+                                            </div>
                                             <Form.Group className="mb-2">
-                                                <Form.Label className="small mb-1">Field Notes</Form.Label>
                                                 <Form.Control 
-                                                    as="textarea" 
-                                                    rows={2} 
-                                                    size="sm"
-                                                    placeholder="Add notes..."
+                                                    as="textarea" rows={2} size="sm" placeholder="Notes..."
                                                     value={site.notes || ''}
                                                     onChange={(e) => handleUpdateSite(site.id, { notes: e.target.value })}
                                                 />
                                             </Form.Group>
                                             <Button 
-                                                size="sm" 
-                                                variant={site.is_checked ? "warning" : "success"}
-                                                className="w-100"
+                                                size="sm" variant={site.is_checked ? "warning" : "success"} className="w-100"
                                                 onClick={() => handleUpdateSite(site.id, { is_checked: !site.is_checked })}
                                             >
-                                                {site.is_checked ? 'Mark Unchecked' : 'Mark Checked'}
+                                                {site.is_checked ? 'Uncheck' : 'Check'}
                                             </Button>
                                         </div>
                                     </Popup>
                                 </Marker>
                             ))}
-
                             {userPos && <RecenterAutomatically lat={userPos.lat} lng={userPos.lng} />}
                         </MapContainer>
-                        
-                        {/* Mobile Floating Action Button */}
-                        <div className="d-md-none position-absolute" style={{ bottom: '20px', right: '20px', zIndex: 1000 }}>
-                            <Button 
-                                variant="primary" 
-                                className="rounded-circle shadow-lg p-3" 
-                                onClick={optimizeRoute}
-                                disabled={isOptimizing || !userPos}
-                            >
-                                {isOptimizing ? <Spinner size="sm" /> : <FaRoute size={24} />}
-                            </Button>
-                        </div>
                     </div>
                 </Col>
 
                 {showSidebar && (
                     <Col md={4} lg={3}>
                         <Card className="site-sidebar shadow-sm border-0 ms-md-3">
-                            <Card.Header className="bg-white border-bottom-0 py-3 d-flex justify-content-between align-items-center">
-                                <h5 className="mb-0 fw-bold">Route Order</h5>
-                                <Badge bg="primary" pill>
-                                    {sites.filter(s => s.is_checked).length} / {sites.length}
-                                </Badge>
+                            <Card.Header className="bg-white py-3 d-flex justify-content-between">
+                                <h5 className="mb-0">Route</h5>
+                                <Badge bg="primary">{sites.filter(s => s.is_checked).length}/{sites.length}</Badge>
                             </Card.Header>
-                            <ListGroup variant="flush" className="overflow-auto" style={{ height: 'calc(100% - 60px)' }}>
+                            <ListGroup variant="flush" className="overflow-auto" style={{ height: 'calc(100vh - 250px)' }}>
                                 {sites.map((site, index) => (
-                                    <ListGroup.Item 
-                                        key={site.id}
-                                        className={`${site.id === nextSite?.id ? 'bg-light border-start border-4 border-warning' : ''}`}
-                                    >
-                                        <div className="d-flex justify-content-between align-items-center mb-1">
+                                    <ListGroup.Item key={site.id} className={site.id === nextSite?.id ? 'bg-light' : ''}>
+                                        <div className="d-flex justify-content-between align-items-center">
                                             <div className="text-truncate">
-                                                <Badge bg="secondary" className="me-2">{(index + 1).toString()}</Badge>
-                                                {site.is_checked ? <FaCheckCircle className="text-success me-1" /> : <FaRegCircle className="text-danger me-1" />}
-                                                <span className={site.is_checked ? 'text-decoration-line-through text-muted' : 'fw-bold'}>
-                                                    {site.name}
-                                                </span>
+                                                <Badge bg="secondary" className="me-1">{index + 1}</Badge>
+                                                <span className={site.is_checked ? 'text-muted text-decoration-line-through' : 'fw-bold'}>{site.name}</span>
                                             </div>
-                                            <Button 
-                                                size="sm" 
-                                                variant="link" 
-                                                className="p-0 text-decoration-none"
-                                                onClick={() => handleUpdateSite(site.id, { is_checked: !site.is_checked })}
-                                            >
-                                                {site.is_checked ? 'Undo' : 'Done'}
-                                            </Button>
+                                            <div className="d-flex">
+                                                <Button variant="link" size="sm" className="p-0 me-2" onClick={() => { setEditSiteData(site); setShowModal(true); }}>
+                                                    <FaEdit />
+                                                </Button>
+                                                <Button variant="link" size="sm" className="text-danger p-0" onClick={() => handleDeleteSite(site.id)}>
+                                                    <FaTrash />
+                                                </Button>
+                                            </div>
                                         </div>
-                                        {site.notes && <div className="text-muted small text-truncate mt-1 fst-italic">"{site.notes}"</div>}
                                     </ListGroup.Item>
                                 ))}
                             </ListGroup>
@@ -332,6 +406,11 @@ const MapView = () => {
                     </Col>
                 )}
             </Row>
+            
+            <ManualSiteModal 
+                show={showModal} onHide={() => setShowModal(false)} 
+                onAdd={handleAddSite} onSave={handleSaveEdit} editData={editSiteData}
+            />
         </Container>
     );
 };

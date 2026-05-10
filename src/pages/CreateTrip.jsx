@@ -4,7 +4,7 @@ import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
-import { FaUpload, FaTable, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard } from 'react-icons/fa';
+import { FaUpload, FaTable, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard, FaPlus  } from 'react-icons/fa';
 import { validateCoordinates } from '../utils/validation';
 import useTripStore from '../store/useTripStore';
 import ManualSiteModal from '../components/ManualSiteModal';

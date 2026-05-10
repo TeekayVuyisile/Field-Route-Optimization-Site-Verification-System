@@ -11,11 +11,23 @@
     width: 100%;
 }
 
-.marker-label {
-    background: white;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    padding: 2px 5px;
-    font-size: 12px;
-    font-weight: bold;
+.nav-banner {
+    z-index: 1050;
+    border-left: 5px solid #007bff;
+    transition: all 0.3s ease;
+}
+
+.rotate-navigation {
+    transition: transform 0.5s ease;
+}
+
+.site-sidebar {
+    height: calc(100vh - 150px);
+}
+
+@media (max-width: 768px) {
+    .nav-banner {
+        font-size: 0.9rem;
+        padding: 10px !important;
+    }
 }

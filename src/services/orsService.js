@@ -60,6 +60,11 @@ export const getOptimizedRoute = async (start, sites) => {
         return getNearestNeighborRoute(start, sites);
     }
 
+    const jobs = sites.map((site, index) => ({
+        id: index,
+        location: [site.longitude, site.latitude]
+    }));
+
     const body = {
         jobs: jobs,
         vehicles: [
@@ -88,18 +93,21 @@ export const getOptimizedRoute = async (start, sites) => {
 };
 
 /**
- * Get route geometry (polyline) for a set of coordinates
+ * Get route directions with full step-by-step instructions
  * @param {Array} coordinates Array of [lng, lat]
- * @returns {Promise<Object>} GeoJSON geometry
+ * @returns {Promise<Object>} Directions object with geometry and steps
  */
 export const getDirections = async (coordinates) => {
     const body = {
-        coordinates: coordinates
+        coordinates: coordinates,
+        instructions: true,
+        units: 'm',
+        preference: 'recommended'
     };
 
     try {
         const response = await orsApi.post('/v2/directions/driving-car/geojson', body);
-        return response.data;
+        return response.data; // This returns a GeoJSON FeatureCollection
     } catch (error) {
         console.error('ORS Directions Error:', error.response?.data || error.message);
         throw error;

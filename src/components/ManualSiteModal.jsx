@@ -1,11 +1,21 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
 import { useForm } from 'react-hook-form';
 import { validateCoordinates } from '../utils/validation';
 
-const ManualSiteModal = ({ show, onHide, onAdd }) => {
-    const { register, handleSubmit, reset, formState: { errors } } = useForm();
+const ManualSiteModal = ({ show, onHide, onAdd, onSave, editData }) => {
+    const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm();
     const [validationError, setValidationError] = useState(null);
+
+    useEffect(() => {
+        if (editData) {
+            setValue('name', editData.name);
+            setValue('latitude', editData.latitude);
+            setValue('longitude', editData.longitude);
+        } else {
+            reset({ name: '', latitude: '', longitude: '' });
+        }
+    }, [editData, show, setValue, reset]);
 
     const onSubmit = (data) => {
         const validation = validateCoordinates(data.latitude, data.longitude);
@@ -14,17 +24,23 @@ const ManualSiteModal = ({ show, onHide, onAdd }) => {
             return;
         }
 
-        onAdd({
-            id: crypto.randomUUID(),
+        const siteData = {
+            id: editData ? editData.id : crypto.randomUUID(),
             name: data.name,
             latitude: parseFloat(data.latitude),
             longitude: parseFloat(data.longitude),
-            is_checked: false,
-            notes: '',
+            is_checked: editData ? editData.is_checked : false,
+            notes: editData ? editData.notes : '',
             isValid: validation.isValid,
             error: validation.error,
             isInverted: validation.isInverted
-        });
+        };
+
+        if (editData && onSave) {
+            onSave(siteData);
+        } else if (onAdd) {
+            onAdd(siteData);
+        }
         
         reset();
         setValidationError(null);
@@ -34,7 +50,7 @@ const ManualSiteModal = ({ show, onHide, onAdd }) => {
     return (
         <Modal show={show} onHide={onHide} centered>
             <Modal.Header closeButton>
-                <Modal.Title>Add Site Manually</Modal.Title>
+                <Modal.Title>{editData ? 'Edit Site' : 'Add Site Manually'}</Modal.Title>
             </Modal.Header>
             <Form onSubmit={handleSubmit(onSubmit)}>
                 <Modal.Body>
@@ -76,7 +92,9 @@ const ManualSiteModal = ({ show, onHide, onAdd }) => {
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={onHide}>Cancel</Button>
-                    <Button variant="primary" type="submit">Add Site</Button>
+                    <Button variant="primary" type="submit">
+                        {editData ? 'Update Site' : 'Add Site'}
+                    </Button>
                 </Modal.Footer>
             </Form>
         </Modal>

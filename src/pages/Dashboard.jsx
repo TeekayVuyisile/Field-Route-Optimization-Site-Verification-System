@@ -138,7 +138,7 @@ const Dashboard = () => {
                                         {dayjs(trip.created_at).format('DD MMM YYYY')}
                                     </Card.Text>
                                     <div className="d-flex justify-content-between align-items-center mt-auto">
-                                        <Badge bg="success" bg-opacity-10 className="text-success border-success border-opacity-25 px-3 py-2">
+                                        <Badge bg="success" className="bg-opacity-10 text-success border-success border-opacity-25 px-3 py-2">
                                             Active
                                         </Badge>
                                         <FaChevronRight className="text-primary opacity-50" />
