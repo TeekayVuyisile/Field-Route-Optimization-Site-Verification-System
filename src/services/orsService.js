@@ -102,7 +102,8 @@ export const getDirections = async (coordinates) => {
         coordinates: coordinates,
         instructions: true,
         units: 'm',
-        preference: 'recommended'
+        preference: 'recommended',
+        radiuses: coordinates.map(() => -1) // -1 means no limit: find the nearest road regardless of distance
     };
 
     try {
