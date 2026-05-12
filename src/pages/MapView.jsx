@@ -298,7 +298,10 @@ const MapView = () => {
     };
 
     const handleCapturePhoto = async (siteId, file) => {
-        if (!file || !user) return;
+        if (!file || !user) {
+            toast.error("User session not found. Please log in again.");
+            return;
+        }
         
         try {
             setUploadingSites(prev => new Set(prev).add(siteId));
@@ -314,22 +317,22 @@ const MapView = () => {
 
             if (uploadError) throw uploadError;
 
-            // 2. Record in site_images table
+            // 2. Record in site_images table (Critical: explicitly include user_id)
             const { error: dbError } = await supabase
                 .from('site_images')
                 .insert([{
                     site_id: siteId,
-                    user_id: user.id,
+                    user_id: user.id, // This matches the RLS policy
                     storage_path: filePath,
                     file_name: file.name
                 }]);
 
             if (dbError) throw dbError;
 
-            toast.success(`Photo uploaded!`);
+            toast.success(`Photo synced!`);
         } catch (error) {
-            console.error('Upload error:', error.message);
-            toast.error(`Failed to upload: ${error.message}`);
+            console.error('Upload error details:', error);
+            toast.error(`Upload failed: ${error.message || 'Check security settings'}`);
         } finally {
             setUploadingSites(prev => {
                 const next = new Set(prev);
