@@ -77,6 +77,26 @@ const MapView = () => {
     const [lastAnnouncedId, setLastAnnouncedId] = useState(null);
     const [showSidebar, setShowSidebar] = useState(true);
     
+    // REFS FOR STABILITY (Phase 1 Crash Fix)
+    const userPosRef = useRef(null);
+    const sitesRef = useRef([]);
+    const voiceEnabledRef = useRef(false);
+    const lastAnnouncedIdRef = useRef(null);
+    const nextSiteRef = useRef(null);
+    const lastRerouteTime = useRef(0);
+    const lastHeadsUpIdx = useRef(-1);
+    const routeDataRef = useRef(null);
+    const currentStepIndexRef = useRef(0);
+    const navigationStepsRef = useRef([]);
+
+    // Keep refs in sync with state
+    useEffect(() => { userPosRef.current = userPos; }, [userPos]);
+    useEffect(() => { sitesRef.current = sites; }, [sites]);
+    useEffect(() => { voiceEnabledRef.current = voiceEnabled; }, [voiceEnabled]);
+    useEffect(() => { lastAnnouncedIdRef.current = lastAnnouncedId; }, [lastAnnouncedId]);
+    useEffect(() => { nextSiteRef.current = nextSite; }, [nextSite]);
+    useEffect(() => { routeDataRef.current = routeData; lastHeadsUpIdx.current = -1; }, [routeData]);
+
     // Site Modal States
     const [showModal, setShowModal] = useState(false);
     const [editSiteData, setEditSiteData] = useState(null);
@@ -84,29 +104,12 @@ const MapView = () => {
     // Navigation State
     const [navigationSteps, setNavigationSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
-    const lastRerouteTime = useMemo(() => ({ current: 0 }), []);
-    
-    // Phase 2: Track heads-up announcements
-    const lastHeadsUpIdx = useRef(-1);
-    
-    // Stable refs for GPS and optimization to prevent effect restarts
-    const routeDataRef = useRef(null);
-    const navStateRef = useRef({ steps: [], index: 0, nextSite: null, lastAnnounced: null });
-    
-    useEffect(() => {
-        routeDataRef.current = routeData;
-        // Reset heads-up when a new route is calculated
-        lastHeadsUpIdx.current = -1;
-    }, [routeData]);
 
-    useEffect(() => {
-        navStateRef.current = { 
-            steps: navigationSteps, 
-            index: currentStepIndex, 
-            nextSite: nextSite, 
-            lastAnnounced: lastAnnouncedId 
-        };
-    }, [navigationSteps, currentStepIndex, nextSite, lastAnnouncedId]);
+    // Keep navigation refs in sync
+    useEffect(() => { 
+        navigationStepsRef.current = navigationSteps; 
+        currentStepIndexRef.current = currentStepIndex; 
+    }, [navigationSteps, currentStepIndex]);
 
     const [uploadingSites, setUploadingSites] = useState(new Set());
 
@@ -118,7 +121,6 @@ const MapView = () => {
 
         toast.info("Acquiring high-accuracy GPS signal...");
         
-        // Use a longer timeout for the first attempt
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -129,7 +131,6 @@ const MapView = () => {
                 console.error("GPS Error:", err);
                 if (err.code === 3) { // Timeout
                     toast.warning("High-accuracy timed out. Trying standard GPS...");
-                    // Fallback to lower accuracy (faster)
                     navigator.geolocation.getCurrentPosition(
                         (pos) => {
                             const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
@@ -147,10 +148,13 @@ const MapView = () => {
         );
     }, []);
 
+    // STABLE OPTIMIZATION FUNCTION (No state dependencies to prevent loop)
     const optimizeRoute = useCallback(async (isAutoReroute = false, forcedPos = null) => {
-        const currentPos = forcedPos || userPos;
+        const currentPos = forcedPos || userPosRef.current;
+        const currentSites = sitesRef.current;
+        const isVoiceOn = voiceEnabledRef.current;
         
-        if (!currentPos || sites.length === 0) {
+        if (!currentPos || currentSites.length === 0) {
             if (!isAutoReroute) {
                 toast.warn("Waiting for GPS lock before optimizing...");
                 refreshGPS();
@@ -158,31 +162,26 @@ const MapView = () => {
             return;
         }
 
-        // Rate limit auto-rerouting (min 30 seconds between calls)
         const now = Date.now();
         if (isAutoReroute && now - lastRerouteTime.current < 30000) return;
         if (isAutoReroute) lastRerouteTime.current = now;
 
         try {
             setIsOptimizing(true);
-            const uncheckedSites = sites.filter(s => !s.is_checked);
+            const uncheckedSites = currentSites.filter(s => !s.is_checked);
             
             if (uncheckedSites.length === 0) {
                 if (!isAutoReroute) toast.info("All sites checked!");
                 return;
             }
 
-            // 1. Get optimized order from ORS
             const optimizedSites = await getOptimizedRoute(currentPos, uncheckedSites);
-            const checkedSites = sites.filter(s => s.is_checked);
-            
-            // Set the new optimal order
+            const checkedSites = currentSites.filter(s => s.is_checked);
             setSites([...optimizedSites, ...checkedSites]);
             
             const target = optimizedSites[0];
             setNextSite(target);
             
-            // 2. Get route geometry
             let routeCoords = [
                 [currentPos.lng, currentPos.lat],
                 ...optimizedSites.map(s => [s.longitude, s.latitude])
@@ -191,13 +190,12 @@ const MapView = () => {
             const directionsResult = await getDirections(routeCoords);
             setRouteData(directionsResult);
 
-            // 3. Extract turn-by-turn steps
             if (directionsResult.features && directionsResult.features[0].properties.segments) {
                 const allSteps = directionsResult.features[0].properties.segments.flatMap(s => s.steps);
                 setNavigationSteps(allSteps);
                 setCurrentStepIndex(0);
                 
-                if (voiceEnabled && allSteps.length > 0) {
+                if (isVoiceOn && allSteps.length > 0) {
                     const msg = isAutoReroute 
                         ? `Off route. Recalculating. Next site: ${target.name}. ${allSteps[0].instruction}`
                         : `Route optimized. First stop: ${target.name}. ${allSteps[0].instruction}`;
@@ -208,102 +206,90 @@ const MapView = () => {
             if (!isAutoReroute) toast.success("Route Optimized!");
         } catch (error) {
             console.error("Optimization error:", error);
-            if (!isAutoReroute) toast.error("Failed to optimize route. Please check your internet connection.");
+            if (!isAutoReroute) toast.error("Failed to optimize route.");
         } finally {
             setIsOptimizing(false);
         }
-    }, [userPos, sites, voiceEnabled, setSites, setNextSite, lastRerouteTime, refreshGPS]);
+    }, [setSites, refreshGPS]); // Extremely stable dependencies
 
     // STABLE GPS WATCHER (Field-Grade Resilience)
     useEffect(() => {
         if (!navigator.geolocation) return;
 
         let lastPos = null;
-        let timeoutCounter = 0;
 
         const id = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude, accuracy } = pos.coords;
                 const p = { lat: latitude, lng: longitude };
 
-                // 1. ACCURACY FILTER (Phase 1 Fix)
-                // If accuracy is poor (> 100m), it's a cell tower/wifi fix. 
-                // We ignore these to prevent jumping 10-20 streets away.
-                if (accuracy > 100) {
-                    console.warn(`Ignoring low-accuracy fix: ${accuracy.toFixed(0)}m`);
-                    return;
-                }
+                // 1. ACCURACY FILTER
+                if (accuracy > 100) return;
 
                 // 2. TELEPORTATION FILTER
-                // If we move more than 500m in a single jump (impossible for a car in 5s), ignore it.
                 if (lastPos) {
                     const jumpDist = calculateDistance(lastPos.lat, lastPos.lng, p.lat, p.lng);
-                    if (jumpDist > 500) {
-                        console.warn(`Ignoring improbable jump: ${jumpDist.toFixed(0)}m`);
-                        return;
-                    }
-                    
-                    // 3. JITTER SMOOTHING
+                    if (jumpDist > 500) return;
                     if (jumpDist < 5) return; 
                 }
                 
                 lastPos = p;
                 setUserPos(p);
-                timeoutCounter = 0; // Reset timeout counter on success
 
+                // Use REFS for logic to avoid effect restarts
                 const currentRoute = routeDataRef.current;
-                const state = navStateRef.current;
+                const activeNextSite = nextSiteRef.current;
+                const isVoiceOn = voiceEnabledRef.current;
+                const lastAnnounced = lastAnnouncedIdRef.current;
+                const steps = navigationStepsRef.current;
+                const stepIdx = currentStepIndexRef.current;
 
-                // (Rest of the navigation logic remains same...)
+                // 1. Check for Auto-Rerouting
                 if (currentRoute?.features?.[0]?.geometry?.coordinates) {
                     const polyline = currentRoute.features[0].geometry.coordinates;
                     if (isOffRoute(p, polyline, 150)) {
                         optimizeRoute(true, p);
                     }
                 }
-                
-                if (state.nextSite && voiceEnabled && state.nextSite.id !== state.lastAnnounced) {
-                    const dist = calculateDistance(latitude, longitude, state.nextSite.latitude, state.nextSite.longitude);
+
+                // 2. Proximity Alert
+                if (activeNextSite && isVoiceOn && activeNextSite.id !== lastAnnounced) {
+                    const dist = calculateDistance(latitude, longitude, activeNextSite.latitude, activeNextSite.longitude);
                     if (dist < 100) {
-                        speak(`Approaching destination: ${state.nextSite.name}`);
-                        setLastAnnouncedId(state.nextSite.id);
+                        speak(`Approaching destination: ${activeNextSite.name}`);
+                        setLastAnnouncedId(activeNextSite.id);
                     }
                 }
 
-                if (state.steps.length > 0 && state.index < state.steps.length - 1) {
-                    const nextStep = state.steps[state.index + 1];
+                // 3. Dynamic Turn-by-Turn Guidance
+                if (steps.length > 0 && stepIdx < steps.length - 1) {
+                    const nextStep = steps[stepIdx + 1];
                     const coords = currentRoute.features[0].geometry.coordinates;
                     const maneuverPointIdx = nextStep.way_points[0];
                     const maneuverPoint = { lng: coords[maneuverPointIdx][0], lat: coords[maneuverPointIdx][1] };
                     const distToTurn = calculateDistance(latitude, longitude, maneuverPoint.lat, maneuverPoint.lng);
                     
-                    if (distToTurn < 150 && distToTurn > 40 && lastHeadsUpIdx.current !== state.index + 1) {
-                        if (voiceEnabled) speak(`In 150 meters, ${nextStep.instruction}`);
-                        lastHeadsUpIdx.current = state.index + 1;
+                    if (distToTurn < 150 && distToTurn > 40 && lastHeadsUpIdx.current !== stepIdx + 1) {
+                        if (isVoiceOn) speak(`In 150 meters, ${nextStep.instruction}`);
+                        lastHeadsUpIdx.current = stepIdx + 1;
                     }
                     if (distToTurn < 30) {
                         setCurrentStepIndex(prev => prev + 1);
-                        if (voiceEnabled) speak(`${nextStep.instruction}`);
+                        if (isVoiceOn) speak(`${nextStep.instruction}`);
                     }
                 }
             },
-            (err) => {
-                console.error("GPS Watch Error:", err);
-                timeoutCounter++;
-                // If we timeout 3 times in a row, warn the user
-                if (timeoutCounter >= 3) {
-                    // We don't toast here to avoid spamming, but we log it
-                }
-            },
+            (err) => console.error("GPS Watch Error:", err),
             { 
                 enableHighAccuracy: true, 
-                timeout: 30000,     // Wait 30s for a fix
-                maximumAge: 10000    // Allow 10s old cache if satellite is weak
+                timeout: 30000,
+                maximumAge: 5000 
             }
         );
 
         return () => navigator.geolocation.clearWatch(id);
-    }, [voiceEnabled, optimizeRoute]); 
+        // NO DEPENDENCIES here so the watch instance is STABLE
+    }, [optimizeRoute]); 
 
     const debouncedSave = useCallback(
         debounce(async (siteId, updates) => {
