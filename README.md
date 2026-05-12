@@ -201,5 +201,4 @@ This system evolved from a simple mapping tool into a professional compliance pl
 
 ---
 
-# Author
-Teekay Vuyisile Manale
+*Author: Teekay Vuyisile Manale*
