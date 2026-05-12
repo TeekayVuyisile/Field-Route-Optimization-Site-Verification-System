@@ -214,72 +214,92 @@ const MapView = () => {
         }
     }, [userPos, sites, voiceEnabled, setSites, setNextSite, lastRerouteTime, refreshGPS]);
 
-    // STABLE GPS WATCHER (Prevents flickering and jumping)
+    // STABLE GPS WATCHER (Field-Grade Resilience)
     useEffect(() => {
         if (!navigator.geolocation) return;
 
         let lastPos = null;
+        let timeoutCounter = 0;
 
         const id = navigator.geolocation.watchPosition(
             (pos) => {
-                const currentLat = pos.coords.latitude;
-                const currentLng = pos.coords.longitude;
-                const p = { lat: currentLat, lng: currentLng };
+                const { latitude, longitude, accuracy } = pos.coords;
+                const p = { lat: latitude, lng: longitude };
 
-                // POSITION SMOOTHING (Phase 1 Fix)
+                // 1. ACCURACY FILTER (Phase 1 Fix)
+                // If accuracy is poor (> 100m), it's a cell tower/wifi fix. 
+                // We ignore these to prevent jumping 10-20 streets away.
+                if (accuracy > 100) {
+                    console.warn(`Ignoring low-accuracy fix: ${accuracy.toFixed(0)}m`);
+                    return;
+                }
+
+                // 2. TELEPORTATION FILTER
+                // If we move more than 500m in a single jump (impossible for a car in 5s), ignore it.
                 if (lastPos) {
-                    const jitter = calculateDistance(lastPos.lat, lastPos.lng, p.lat, p.lng);
-                    if (jitter < 3) return; 
+                    const jumpDist = calculateDistance(lastPos.lat, lastPos.lng, p.lat, p.lng);
+                    if (jumpDist > 500) {
+                        console.warn(`Ignoring improbable jump: ${jumpDist.toFixed(0)}m`);
+                        return;
+                    }
+                    
+                    // 3. JITTER SMOOTHING
+                    if (jumpDist < 5) return; 
                 }
                 
                 lastPos = p;
                 setUserPos(p);
+                timeoutCounter = 0; // Reset timeout counter on success
 
                 const currentRoute = routeDataRef.current;
                 const state = navStateRef.current;
 
-                // 1. Check for Auto-Rerouting (Off-Route Detection)
+                // (Rest of the navigation logic remains same...)
                 if (currentRoute?.features?.[0]?.geometry?.coordinates) {
                     const polyline = currentRoute.features[0].geometry.coordinates;
                     if (isOffRoute(p, polyline, 150)) {
                         optimizeRoute(true, p);
-                        return;
                     }
                 }
-
-                // 2. Proximity Alert for Site Destination
+                
                 if (state.nextSite && voiceEnabled && state.nextSite.id !== state.lastAnnounced) {
-                    const dist = calculateDistance(currentLat, currentLng, state.nextSite.latitude, state.nextSite.longitude);
+                    const dist = calculateDistance(latitude, longitude, state.nextSite.latitude, state.nextSite.longitude);
                     if (dist < 100) {
                         speak(`Approaching destination: ${state.nextSite.name}`);
                         setLastAnnouncedId(state.nextSite.id);
                     }
                 }
 
-                // 3. Dynamic Turn-by-Turn Guidance (Phase 2: Two-Stage)
                 if (state.steps.length > 0 && state.index < state.steps.length - 1) {
                     const nextStep = state.steps[state.index + 1];
                     const coords = currentRoute.features[0].geometry.coordinates;
                     const maneuverPointIdx = nextStep.way_points[0];
                     const maneuverPoint = { lng: coords[maneuverPointIdx][0], lat: coords[maneuverPointIdx][1] };
+                    const distToTurn = calculateDistance(latitude, longitude, maneuverPoint.lat, maneuverPoint.lng);
                     
-                    const distToTurn = calculateDistance(currentLat, currentLng, maneuverPoint.lat, maneuverPoint.lng);
-                    
-                    // Stage 1: Heads-up (150 meters away)
                     if (distToTurn < 150 && distToTurn > 40 && lastHeadsUpIdx.current !== state.index + 1) {
                         if (voiceEnabled) speak(`In 150 meters, ${nextStep.instruction}`);
                         lastHeadsUpIdx.current = state.index + 1;
                     }
-
-                    // Stage 2: Action Prompt (30 meters away)
                     if (distToTurn < 30) {
                         setCurrentStepIndex(prev => prev + 1);
                         if (voiceEnabled) speak(`${nextStep.instruction}`);
                     }
                 }
             },
-            (err) => console.error(err),
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 1000 }
+            (err) => {
+                console.error("GPS Watch Error:", err);
+                timeoutCounter++;
+                // If we timeout 3 times in a row, warn the user
+                if (timeoutCounter >= 3) {
+                    // We don't toast here to avoid spamming, but we log it
+                }
+            },
+            { 
+                enableHighAccuracy: true, 
+                timeout: 30000,     // Wait 30s for a fix
+                maximumAge: 10000    // Allow 10s old cache if satellite is weak
+            }
         );
 
         return () => navigator.geolocation.clearWatch(id);
