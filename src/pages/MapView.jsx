@@ -13,7 +13,7 @@ import {
 import { getOptimizedRoute, getDirections } from '../services/orsService';
 import { supabase } from '../lib/supabase';
 import { toast } from 'react-toastify';
-import { speak, calculateDistance } from '../utils/navigationUtils';
+import { speak, calculateDistance, isOffRoute } from '../utils/navigationUtils';
 import ManualSiteModal from '../components/ManualSiteModal';
 import debounce from 'lodash/debounce';
 import './MapView.css';
@@ -82,6 +82,7 @@ const MapView = () => {
     // Navigation State
     const [navigationSteps, setNavigationSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
+    const lastRerouteTime = useMemo(() => ({ current: 0 }), []);
 
     const refreshGPS = useCallback(() => {
         if (!navigator.geolocation) {
@@ -103,49 +104,31 @@ const MapView = () => {
         );
     }, []);
 
-    // Watch user position & Proximity Alert
-    useEffect(() => {
-        if (!navigator.geolocation) return;
-        const id = navigator.geolocation.watchPosition(
-            (pos) => {
-                const currentLat = pos.coords.latitude;
-                const currentLng = pos.coords.longitude;
-                setUserPos({ lat: currentLat, lng: currentLng });
-
-                // Proximity Alert for Site Destination
-                if (nextSite && voiceEnabled && nextSite.id !== lastAnnouncedId) {
-                    const dist = calculateDistance(currentLat, currentLng, nextSite.latitude, nextSite.longitude);
-                    if (dist < 100) {
-                        speak(`Approaching destination: ${nextSite.name}`);
-                        setLastAnnouncedId(nextSite.id);
-                    }
-                }
-            },
-            (err) => console.error(err),
-            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-        );
-        return () => navigator.geolocation.clearWatch(id);
-    }, [nextSite, voiceEnabled, lastAnnouncedId]);
-
-    const optimizeRoute = async () => {
-        if (!userPos || sites.length === 0) {
-            toast.warn("Waiting for GPS location...");
-            refreshGPS();
+    const optimizeRoute = useCallback(async (isAutoReroute = false, forcedPos = null) => {
+        const currentPos = forcedPos || userPos;
+        if (!currentPos || sites.length === 0) {
+            if (!isAutoReroute) toast.warn("Waiting for GPS location...");
             return;
         }
+
+        // Rate limit auto-rerouting (min 30 seconds between calls)
+        const now = Date.now();
+        if (isAutoReroute && now - lastRerouteTime.current < 30000) return;
+        if (isAutoReroute) lastRerouteTime.current = now;
 
         try {
             setIsOptimizing(true);
             const uncheckedSites = sites.filter(s => !s.is_checked);
             
             if (uncheckedSites.length === 0) {
-                toast.info("All sites checked!");
-                if (voiceEnabled) speak("All sites have been checked. Trip complete.");
+                if (!isAutoReroute) toast.info("All sites checked!");
                 return;
             }
 
-            const optimizedSites = await getOptimizedRoute(userPos, uncheckedSites);
+            const optimizedSites = await getOptimizedRoute(currentPos, uncheckedSites);
             const checkedSites = sites.filter(s => s.is_checked);
+            
+            // Set the new optimal order
             setSites([...optimizedSites, ...checkedSites]);
             
             const target = optimizedSites[0];
@@ -153,7 +136,7 @@ const MapView = () => {
             
             // Route geometry
             let routeCoords = [
-                [userPos.lng, userPos.lat],
+                [currentPos.lng, currentPos.lat],
                 ...optimizedSites.map(s => [s.longitude, s.latitude])
             ];
 
@@ -167,17 +150,70 @@ const MapView = () => {
                 setCurrentStepIndex(0);
                 
                 if (voiceEnabled && allSteps.length > 0) {
-                    speak(`Navigation started. ${allSteps[0].instruction}`);
+                    const msg = isAutoReroute 
+                        ? `Off route. Recalculating from your current location. Next site is ${target.name}. ${allSteps[0].instruction}`
+                        : `Navigation started. Next site is ${target.name}. ${allSteps[0].instruction}`;
+                    speak(msg);
                 }
             }
             
-            toast.success("Route optimized!");
+            if (!isAutoReroute) toast.success("Route optimized!");
         } catch (error) {
-            toast.error("Failed to optimize route.");
+            console.error("Optimization error:", error);
+            if (!isAutoReroute) toast.error("Failed to optimize route.");
         } finally {
             setIsOptimizing(false);
         }
-    };
+    }, [userPos, sites, voiceEnabled, setSites, setNextSite, lastRerouteTime]);
+
+    // Watch user position & Navigation Engine
+    useEffect(() => {
+        if (!navigator.geolocation) return;
+        const id = navigator.geolocation.watchPosition(
+            (pos) => {
+                const currentLat = pos.coords.latitude;
+                const currentLng = pos.coords.longitude;
+                const p = { lat: currentLat, lng: currentLng };
+                setUserPos(p);
+
+                // 1. Check for Auto-Rerouting (Off-Route Detection)
+                if (routeData?.features?.[0]?.geometry?.coordinates) {
+                    const polyline = routeData.features[0].geometry.coordinates;
+                    if (isOffRoute(p, polyline, 150)) { // 150m threshold for reroute
+                        optimizeRoute(true, p);
+                        return;
+                    }
+                }
+
+                // 2. Proximity Alert for Site Destination
+                if (nextSite && voiceEnabled && nextSite.id !== lastAnnouncedId) {
+                    const dist = calculateDistance(currentLat, currentLng, nextSite.latitude, nextSite.longitude);
+                    if (dist < 100) {
+                        speak(`Approaching destination: ${nextSite.name}`);
+                        setLastAnnouncedId(nextSite.id);
+                    }
+                }
+
+                // 3. Dynamic Turn-by-Turn Guidance (Auto-step)
+                if (navigationSteps.length > 0 && currentStepIndex < navigationSteps.length - 1) {
+                    const nextStep = navigationSteps[currentStepIndex + 1];
+                    const coords = routeData.features[0].geometry.coordinates;
+                    const maneuverPointIdx = nextStep.way_points[0];
+                    const maneuverPoint = { lng: coords[maneuverPointIdx][0], lat: coords[maneuverPointIdx][1] };
+                    
+                    const distToTurn = calculateDistance(currentLat, currentLng, maneuverPoint.lat, maneuverPoint.lng);
+                    
+                    if (distToTurn < 40) { // If within 40m of the turn point
+                        setCurrentStepIndex(prev => prev + 1);
+                        if (voiceEnabled) speak(nextStep.instruction);
+                    }
+                }
+            },
+            (err) => console.error(err),
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+        return () => navigator.geolocation.clearWatch(id);
+    }, [nextSite, voiceEnabled, lastAnnouncedId, navigationSteps, currentStepIndex, routeData, optimizeRoute]);
 
     const debouncedSave = useCallback(
         debounce(async (siteId, updates) => {

@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import CreateTrip from './pages/CreateTrip';
 import TripDetails from './pages/TripDetails';
 import MapView from './pages/MapView';
+import TripReview from './pages/TripReview';
 import { ToastContainer } from 'react-toastify';
 import './App.css';
 
@@ -40,6 +41,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <TripDetails />
+              </ProtectedRoute>
+            } 
+          />
+          <Route 
+            path="/trip-review/:id" 
+            element={
+              <ProtectedRoute>
+                <TripReview />
               </ProtectedRoute>
             } 
           />

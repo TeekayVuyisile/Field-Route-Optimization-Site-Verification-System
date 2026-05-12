@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Button, Row, Col, Card, Spinner, ListGroup, Badge } from 'react-bootstrap';
 import { useAuth } from '../context/AuthContext';
-import { FaPlus, FaRoute, FaCalendarAlt, FaChevronRight, FaTrash } from 'react-icons/fa';
+import { FaPlus, FaRoute, FaCalendarAlt, FaChevronRight, FaTrash, FaMapMarkedAlt } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import useTripStore from '../store/useTripStore';
@@ -80,6 +80,10 @@ const Dashboard = () => {
         }
     };
 
+    const handleViewReview = (tripId) => {
+        navigate(`/trip-review/${tripId}`);
+    };
+
     const startNewTrip = () => {
         clearStore();
         navigate('/create-trip');
@@ -115,11 +119,10 @@ const Dashboard = () => {
                     {trips.map(trip => (
                         <Col md={6} lg={4} key={trip.id}>
                             <Card 
-                                className="h-100 cursor-pointer shadow-sm hover-shadow border-0" 
-                                onClick={() => handleResumeTrip(trip)}
+                                className="h-100 shadow-sm hover-shadow border-0" 
                                 style={{ borderRadius: '15px' }}
                             >
-                                <Card.Body className="p-4">
+                                <Card.Body className="p-4 d-flex flex-column">
                                     <div className="d-flex justify-content-between align-items-start mb-3">
                                         <div className="bg-primary bg-opacity-10 p-3 rounded-circle me-3">
                                             <FaRoute className="text-primary" size={20} />
@@ -133,15 +136,31 @@ const Dashboard = () => {
                                         </Button>
                                     </div>
                                     <h5 className="fw-bold mb-1 text-truncate">{trip.title}</h5>
-                                    <Card.Text className="text-muted small mb-3">
+                                    <Card.Text className="text-muted small mb-4">
                                         <FaCalendarAlt className="me-1 opacity-50" />
                                         {dayjs(trip.created_at).format('DD MMM YYYY')}
                                     </Card.Text>
-                                    <div className="d-flex justify-content-between align-items-center mt-auto">
-                                        <Badge bg="success" className="bg-opacity-10 text-success border-success border-opacity-25 px-3 py-2">
-                                            Active
-                                        </Badge>
-                                        <FaChevronRight className="text-primary opacity-50" />
+                                    
+                                    <div className="mt-auto">
+                                        <div className="d-grid gap-2">
+                                            <Button 
+                                                variant="outline-primary" 
+                                                size="sm" 
+                                                className="rounded-pill"
+                                                onClick={() => handleViewReview(trip.id)}
+                                            >
+                                                View Trip Info
+                                            </Button>
+                                            <Button 
+                                                variant="primary" 
+                                                size="sm" 
+                                                className="rounded-pill"
+                                                onClick={() => handleResumeTrip(trip)}
+                                            >
+                                                <FaMapMarkedAlt className="me-2" />
+                                                Resume Map
+                                            </Button>
+                                        </div>
                                     </div>
                                 </Card.Body>
                             </Card>
