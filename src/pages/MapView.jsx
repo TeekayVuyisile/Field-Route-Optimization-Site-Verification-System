@@ -111,12 +111,108 @@ const MapView = () => {
     const [uploadingSites, setUploadingSites] = useState(new Set());
 
     const refreshGPS = useCallback(() => {
-        // ... same logic
+        if (!navigator.geolocation) {
+            toast.error("Geolocation is not supported by this browser.");
+            return;
+        }
+
+        toast.info("Acquiring high-accuracy GPS signal...");
+        
+        // Use a longer timeout for the first attempt
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setUserPos(p);
+                toast.success("GPS Lock Acquired!");
+            },
+            (err) => {
+                console.error("GPS Error:", err);
+                if (err.code === 3) { // Timeout
+                    toast.warning("High-accuracy timed out. Trying standard GPS...");
+                    // Fallback to lower accuracy (faster)
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => {
+                            const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                            setUserPos(p);
+                            toast.success("GPS Location found (standard accuracy)");
+                        },
+                        (err2) => toast.error(`GPS Error: ${err2.message}`),
+                        { enableHighAccuracy: false, timeout: 10000 }
+                    );
+                } else {
+                    toast.error(`GPS Error: ${err.message}`);
+                }
+            },
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+        );
     }, []);
 
     const optimizeRoute = useCallback(async (isAutoReroute = false, forcedPos = null) => {
-        // ... same logic
-    }, [userPos, sites, voiceEnabled, setSites, setNextSite, lastRerouteTime]);
+        const currentPos = forcedPos || userPos;
+        
+        if (!currentPos || sites.length === 0) {
+            if (!isAutoReroute) {
+                toast.warn("Waiting for GPS lock before optimizing...");
+                refreshGPS();
+            }
+            return;
+        }
+
+        // Rate limit auto-rerouting (min 30 seconds between calls)
+        const now = Date.now();
+        if (isAutoReroute && now - lastRerouteTime.current < 30000) return;
+        if (isAutoReroute) lastRerouteTime.current = now;
+
+        try {
+            setIsOptimizing(true);
+            const uncheckedSites = sites.filter(s => !s.is_checked);
+            
+            if (uncheckedSites.length === 0) {
+                if (!isAutoReroute) toast.info("All sites checked!");
+                return;
+            }
+
+            // 1. Get optimized order from ORS
+            const optimizedSites = await getOptimizedRoute(currentPos, uncheckedSites);
+            const checkedSites = sites.filter(s => s.is_checked);
+            
+            // Set the new optimal order
+            setSites([...optimizedSites, ...checkedSites]);
+            
+            const target = optimizedSites[0];
+            setNextSite(target);
+            
+            // 2. Get route geometry
+            let routeCoords = [
+                [currentPos.lng, currentPos.lat],
+                ...optimizedSites.map(s => [s.longitude, s.latitude])
+            ];
+
+            const directionsResult = await getDirections(routeCoords);
+            setRouteData(directionsResult);
+
+            // 3. Extract turn-by-turn steps
+            if (directionsResult.features && directionsResult.features[0].properties.segments) {
+                const allSteps = directionsResult.features[0].properties.segments.flatMap(s => s.steps);
+                setNavigationSteps(allSteps);
+                setCurrentStepIndex(0);
+                
+                if (voiceEnabled && allSteps.length > 0) {
+                    const msg = isAutoReroute 
+                        ? `Off route. Recalculating. Next site: ${target.name}. ${allSteps[0].instruction}`
+                        : `Route optimized. First stop: ${target.name}. ${allSteps[0].instruction}`;
+                    speak(msg);
+                }
+            }
+            
+            if (!isAutoReroute) toast.success("Route Optimized!");
+        } catch (error) {
+            console.error("Optimization error:", error);
+            if (!isAutoReroute) toast.error("Failed to optimize route. Please check your internet connection.");
+        } finally {
+            setIsOptimizing(false);
+        }
+    }, [userPos, sites, voiceEnabled, setSites, setNextSite, lastRerouteTime, refreshGPS]);
 
     // STABLE GPS WATCHER (Prevents flickering and jumping)
     useEffect(() => {
