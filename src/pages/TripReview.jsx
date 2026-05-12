@@ -38,9 +38,9 @@ const TripReview = () => {
 
                 const { data: sitesData, error: sitesError } = await supabase
                     .from('sites')
-                    .order('order_index', { ascending: true })
                     .select('*')
-                    .eq('trip_id', id);
+                    .eq('trip_id', id)
+                    .order('order_index', { ascending: true });
 
                 if (sitesError) throw sitesError;
                 setSitesLocal(sitesData);
