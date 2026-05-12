@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Form } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Form, Modal, Image } from 'react-bootstrap';
 import { supabase } from '../lib/supabase';
 import { 
     flexRender, 
@@ -9,7 +9,10 @@ import {
     getSortedRowModel,
     getFilteredRowModel
 } from '@tanstack/react-table';
-import { FaArrowLeft, FaDownload, FaCheckCircle, FaTimesCircle, FaMapMarkedAlt } from 'react-icons/fa';
+import { 
+    FaArrowLeft, FaDownload, FaCheckCircle, FaTimesCircle, 
+    FaMapMarkedAlt, FaTrash, FaEye, FaCamera 
+} from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import useTripStore from '../store/useTripStore';
 
@@ -19,14 +22,21 @@ const TripReview = () => {
     const { setCurrentTrip, setSites } = useTripStore();
     const [trip, setTrip] = useState(null);
     const [sites, setSitesLocal] = useState([]);
+    const [images, setImages] = useState([]);
     const [loading, setLoading] = useState(true);
     const [sorting, setSorting] = useState([]);
     const [globalFilter, setGlobalFilter] = useState('');
+    
+    // Gallery Modal State
+    const [showGallery, setShowGallery] = useState(false);
+    const [selectedImage, setSelectedImage] = useState(null);
 
     useEffect(() => {
         const fetchTripData = async () => {
             try {
                 setLoading(true);
+                
+                // 1. Fetch trip details
                 const { data: tripData, error: tripError } = await supabase
                     .from('trips')
                     .select('*')
@@ -36,6 +46,7 @@ const TripReview = () => {
                 if (tripError) throw tripError;
                 setTrip(tripData);
 
+                // 2. Fetch sites for this trip
                 const { data: sitesData, error: sitesError } = await supabase
                     .from('sites')
                     .select('*')
@@ -44,6 +55,17 @@ const TripReview = () => {
 
                 if (sitesError) throw sitesError;
                 setSitesLocal(sitesData);
+
+                // 3. Fetch all images for these sites
+                const siteIds = sitesData.map(s => s.id);
+                const { data: imagesData, error: imagesError } = await supabase
+                    .from('site_images')
+                    .select('*')
+                    .in('site_id', siteIds);
+
+                if (imagesError) throw imagesError;
+                setImages(imagesData);
+
             } catch (error) {
                 console.error('Error fetching trip data:', error.message);
                 toast.error('Failed to load trip data');
@@ -67,6 +89,55 @@ const TripReview = () => {
         navigate('/map');
     };
 
+    const handleDeleteImage = async (img) => {
+        if (!window.confirm("Are you sure you want to delete this photo?")) return;
+
+        try {
+            // 1. Delete from Storage
+            const { error: storageError } = await supabase.storage
+                .from('site-photos')
+                .remove([img.storage_path]);
+
+            if (storageError) throw storageError;
+
+            // 2. Delete from Database
+            const { error: dbError } = await supabase
+                .from('site_images')
+                .delete()
+                .eq('id', img.id);
+
+            if (dbError) throw dbError;
+
+            // 3. Update local state
+            setImages(prev => prev.filter(i => i.id !== img.id));
+            toast.success("Image deleted");
+            if (selectedImage?.id === img.id) setShowGallery(false);
+        } catch (error) {
+            toast.error("Failed to delete image");
+        }
+    };
+
+    const handleDownloadImage = async (img) => {
+        try {
+            const { data, error } = await supabase.storage
+                .from('site-photos')
+                .download(img.storage_path);
+
+            if (error) throw error;
+
+            const url = URL.createObjectURL(data);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = img.file_name || `site_photo_${img.id}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            toast.error("Failed to download image");
+        }
+    };
+
     const columns = useMemo(() => [
         {
             accessorKey: 'name',
@@ -82,25 +153,60 @@ const TripReview = () => {
             )
         },
         {
+            id: 'evidence',
+            header: 'Evidence',
+            cell: ({ row }) => {
+                const siteImages = images.filter(img => img.site_id === row.original.id);
+                return (
+                    <div className="d-flex gap-1 flex-wrap">
+                        {siteImages.length > 0 ? (
+                            siteImages.map(img => {
+                                // Construct public URL (Note: Bucket must be public or use signed URLs)
+                                // Since we kept it private, we use the storage.from().getPublicUrl() or custom downloader
+                                // For simplicity in review, we'll fetch signed URLs or a direct loader
+                                const { data } = supabase.storage.from('site-photos').getPublicUrl(img.storage_path);
+                                return (
+                                    <div 
+                                        key={img.id} 
+                                        className="position-relative cursor-pointer"
+                                        onClick={() => { setSelectedImage({ ...img, url: data.publicUrl }); setShowGallery(true); }}
+                                        style={{ width: '40px', height: '40px' }}
+                                    >
+                                        <Image 
+                                            src={data.publicUrl} 
+                                            thumbnail 
+                                            className="w-100 h-100 object-fit-cover"
+                                        />
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <span className="text-muted small">No photos</span>
+                        )}
+                    </div>
+                );
+            }
+        },
+        {
             accessorKey: 'notes',
             header: 'Field Notes',
             cell: ({ getValue }) => (
-                <div style={{ maxWidth: '300px', whiteSpace: 'normal', fontSize: '0.9rem' }}>
-                    {getValue() || <span className="text-muted fst-italic">No notes recorded</span>}
+                <div style={{ maxWidth: '250px', whiteSpace: 'normal', fontSize: '0.9rem' }}>
+                    {getValue() || <span className="text-muted fst-italic">No notes</span>}
                 </div>
             )
         },
         {
             accessorKey: 'latitude',
-            header: 'Latitude',
-            cell: info => info.getValue().toFixed(6)
+            header: 'Lat',
+            cell: info => info.getValue().toFixed(5)
         },
         {
             accessorKey: 'longitude',
-            header: 'Longitude',
-            cell: info => info.getValue().toFixed(6)
+            header: 'Lng',
+            cell: info => info.getValue().toFixed(5)
         }
-    ], [sites]);
+    ], [images]);
 
     const table = useReactTable({
         data: sites,
@@ -118,13 +224,14 @@ const TripReview = () => {
 
     const exportToCSV = () => {
         if (!sites.length) return;
-        const headers = ['Site Name', 'Status', 'Notes', 'Latitude', 'Longitude'];
+        const headers = ['Site Name', 'Status', 'Notes', 'Latitude', 'Longitude', 'Photos Count'];
         const rows = sites.map(s => [
             s.name,
             s.is_checked ? 'Verified' : 'Pending',
             s.notes || '',
             s.latitude,
-            s.longitude
+            s.longitude,
+            images.filter(img => img.site_id === s.id).length
         ]);
         const csvContent = [
             headers.join(','),
@@ -180,7 +287,7 @@ const TripReview = () => {
             </Row>
 
             <Row className="mb-4 g-3">
-                <Col md={4}>
+                <Col md={3}>
                     <Card className="text-center shadow-sm h-100 border-0">
                         <Card.Body>
                             <Card.Title className="text-muted small text-uppercase fw-bold">Completion</Card.Title>
@@ -195,7 +302,7 @@ const TripReview = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={4}>
+                <Col md={3}>
                     <Card className="text-center shadow-sm h-100 border-0">
                         <Card.Body>
                             <Card.Title className="text-muted small text-uppercase fw-bold">Verified</Card.Title>
@@ -204,12 +311,21 @@ const TripReview = () => {
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={4}>
+                <Col md={3}>
                     <Card className="text-center shadow-sm h-100 border-0">
                         <Card.Body>
                             <Card.Title className="text-muted small text-uppercase fw-bold">Pending</Card.Title>
                             <h2 className="mb-0 text-warning fw-bold">{sites.filter(s => !s.is_checked).length}</h2>
                             <p className="small text-muted mb-0">sites remaining</p>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm h-100 border-0">
+                        <Card.Body>
+                            <Card.Title className="text-muted small text-uppercase fw-bold">Evidence</Card.Title>
+                            <h2 className="mb-0 text-info fw-bold">{images.length}</h2>
+                            <p className="small text-muted mb-0"><FaCamera className="me-1" /> Photos Captured</p>
                         </Card.Body>
                     </Card>
                 </Col>
@@ -259,6 +375,35 @@ const TripReview = () => {
                     </Table>
                 </Card.Body>
             </Card>
+
+            {/* Image Preview Modal */}
+            <Modal show={showGallery} onHide={() => setShowGallery(false)} centered size="lg">
+                <Modal.Header closeButton>
+                    <Modal.Title>Site Evidence: {selectedImage?.file_name}</Modal.Title>
+                </Modal.Header>
+                <Modal.Body className="text-center bg-black p-0">
+                    {selectedImage && (
+                        <Image 
+                            src={selectedImage.url} 
+                            fluid 
+                            style={{ maxHeight: '70vh' }}
+                        />
+                    )}
+                </Modal.Body>
+                <Modal.Footer className="justify-content-between">
+                    <Button variant="outline-danger" onClick={() => handleDeleteImage(selectedImage)}>
+                        <FaTrash className="me-2" /> Delete Photo
+                    </Button>
+                    <div>
+                        <Button variant="secondary" className="me-2" onClick={() => setShowGallery(false)}>
+                            Close
+                        </Button>
+                        <Button variant="primary" onClick={() => handleDownloadImage(selectedImage)}>
+                            <FaDownload className="me-2" /> Download Original
+                        </Button>
+                    </div>
+                </Modal.Footer>
+            </Modal>
         </Container>
     );
 };

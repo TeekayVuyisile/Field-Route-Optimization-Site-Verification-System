@@ -8,10 +8,11 @@ import { useNavigate } from 'react-router-dom';
 import { 
     FaCheckCircle, FaRegCircle, FaRoute, FaSync, FaSave, 
     FaVolumeUp, FaVolumeMute, FaLocationArrow, FaPlus, 
-    FaEdit, FaTrash, FaCrosshairs 
+    FaEdit, FaTrash, FaCrosshairs, FaCamera, FaImage 
 } from 'react-icons/fa';
 import { getOptimizedRoute, getDirections } from '../services/orsService';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import { toast } from 'react-toastify';
 import { speak, calculateDistance, isOffRoute } from '../utils/navigationUtils';
 import ManualSiteModal from '../components/ManualSiteModal';
@@ -65,6 +66,7 @@ const RecenterAutomatically = ({ lat, lng }) => {
 
 const MapView = () => {
     const { currentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
+    const { user } = useAuth();
     const navigate = useNavigate();
     const [userPos, setUserPos] = useState(null);
     const [routeData, setRouteData] = useState(null);
@@ -83,6 +85,8 @@ const MapView = () => {
     const [navigationSteps, setNavigationSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const lastRerouteTime = useMemo(() => ({ current: 0 }), []);
+    
+    const [uploadingSites, setUploadingSites] = useState(new Set());
 
     const refreshGPS = useCallback(() => {
         if (!navigator.geolocation) {
@@ -293,6 +297,48 @@ const MapView = () => {
         }
     };
 
+    const handleCapturePhoto = async (siteId, file) => {
+        if (!file || !user) return;
+        
+        try {
+            setUploadingSites(prev => new Set(prev).add(siteId));
+            
+            const fileExt = file.name.split('.').pop();
+            const fileName = `${siteId}/${Date.now()}.${fileExt}`;
+            const filePath = `${user.id}/${fileName}`;
+
+            // 1. Upload to Supabase Storage
+            const { error: uploadError } = await supabase.storage
+                .from('site-photos')
+                .upload(filePath, file);
+
+            if (uploadError) throw uploadError;
+
+            // 2. Record in site_images table
+            const { error: dbError } = await supabase
+                .from('site_images')
+                .insert([{
+                    site_id: siteId,
+                    user_id: user.id,
+                    storage_path: filePath,
+                    file_name: file.name
+                }]);
+
+            if (dbError) throw dbError;
+
+            toast.success(`Photo uploaded!`);
+        } catch (error) {
+            console.error('Upload error:', error.message);
+            toast.error(`Failed to upload: ${error.message}`);
+        } finally {
+            setUploadingSites(prev => {
+                const next = new Set(prev);
+                next.delete(siteId);
+                return next;
+            });
+        }
+    };
+
     if (!currentTrip || sites.length === 0) {
         return (
             <Container className="text-center mt-5">
@@ -376,11 +422,26 @@ const MapView = () => {
                                     position={[site.latitude, site.longitude]}
                                     icon={site.is_checked ? greenIcon : (site.id === nextSite?.id ? yellowIcon : redIcon)}
                                 >
-                                    <Popup minWidth={200}>
+                                    <Popup minWidth={220}>
                                         <div className="p-1">
                                             <div className="d-flex justify-content-between align-items-center mb-2">
                                                 <h6 className="mb-0">{site.name}</h6>
-                                                <div>
+                                                <div className="d-flex align-items-center">
+                                                    {uploadingSites.has(site.id) ? (
+                                                        <Spinner size="sm" animation="border" variant="primary" className="me-2" />
+                                                    ) : (
+                                                        <div className="position-relative me-2" style={{ width: '20px', height: '20px' }}>
+                                                            <input 
+                                                                type="file" 
+                                                                accept="image/*" 
+                                                                capture="environment"
+                                                                className="position-absolute opacity-0 w-100 h-100 cursor-pointer"
+                                                                style={{ zIndex: 10, top: 0, left: 0 }}
+                                                                onChange={(e) => handleCapturePhoto(site.id, e.target.files[0])}
+                                                            />
+                                                            <FaCamera size={16} className="text-primary" />
+                                                        </div>
+                                                    )}
                                                     <Button variant="link" size="sm" className="p-0 me-2" onClick={() => { setEditSiteData(site); setShowModal(true); }}>
                                                         <FaEdit />
                                                     </Button>
