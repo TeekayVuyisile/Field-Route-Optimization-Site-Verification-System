@@ -23,6 +23,7 @@ A professional-grade web application designed for field teams to manage complex 
 | **Hands-Free Navigation** | Automatic turn-by-turn voice guidance with two-stage announcements (150m heads-up & 30m action). |
 | **Auto-Pilot Rerouting** | Real-time "Off-Route" detection. Detours (e.g., for lunch) trigger automatic re-optimization from the new location. |
 | **Photo Evidence System** | Native camera integration with high-quality background syncing to Supabase Storage. Supports multiple photos per site. |
+| **Digital Site Logbooks** | Advanced field note-taking with real-time autosave. Capture critical site data and inspection findings directly from the interactive map. |
 | **Field-Grade GPS** | Advanced signal filtering to prevent "street jumping," jitter smoothing, and high-accuracy timeout recovery. |
 | **Professional Reporting** | Dedicated Trip Review dashboard with completion analytics, search/filter verification logs, and CSV data export. |
 | **Infinite Loop Stability** | Refactored internal engine using React Refs to prevent browser crashes during high-frequency GPS updates. |
