@@ -89,5 +89,117 @@ The application is optimized for deployment on **Vercel** with the following env
 
 ---
 
-# 8. Project Evolution (MVP to Pro)
+# 8. Setup Guide
+
+## A. Local Development Setup
+
+1.  **Clone the repository** and navigate to the `routeops` directory.
+2.  **Install Dependencies:**
+    ```bash
+    npm install
+    ```
+3.  **Environment Variables:**
+    Create a `.env` file in the root and add your keys:
+    ```env
+    VITE_SUPABASE_URL=your_supabase_url
+    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+    VITE_ORS_API_KEY=your_openrouteservice_api_key
+    ```
+4.  **Run Locally:**
+    ```bash
+    npm run dev
+    ```
+
+## B. Vercel Deployment
+
+1.  Push your code to GitHub.
+2.  Connect your repository to **Vercel**.
+3.  In Vercel **Project Settings -> Environment Variables**, add the three keys mentioned above.
+4.  Deploy. (Note: The `api/` directory is configured for Vercel Serverless Functions if needed).
+
+---
+
+# 9. Supabase Configuration (Critical)
+
+To make the system functional, you must set up the database and storage in your Supabase dashboard.
+
+### Step 1: Database Schema & RLS
+Run this script in the **Supabase SQL Editor**:
+
+```sql
+-- 1. TRIPS TABLE
+CREATE TABLE trips (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES auth.users NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. SITES TABLE
+CREATE TABLE sites (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    trip_id UUID REFERENCES trips(id) ON DELETE CASCADE NOT NULL,
+    name TEXT NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    is_checked BOOLEAN DEFAULT FALSE,
+    notes TEXT,
+    order_index INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. SITE IMAGES TABLE
+CREATE TABLE site_images (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    site_id UUID REFERENCES sites(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES auth.users NOT NULL,
+    storage_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ENABLE ROW LEVEL SECURITY
+ALTER TABLE trips ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_images ENABLE ROW LEVEL SECURITY;
+
+-- POLICIES
+CREATE POLICY "Users can manage their own trips" ON trips FOR ALL TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage sites in their trips" ON sites FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM trips WHERE trips.id = sites.trip_id AND trips.user_id = auth.uid()));
+CREATE POLICY "Users can manage their own site images" ON site_images FOR ALL TO authenticated USING (auth.uid() = user_id);
+
+-- GRANT PERMISSIONS
+GRANT ALL ON TABLE trips TO authenticated;
+GRANT ALL ON TABLE sites TO authenticated;
+GRANT ALL ON TABLE site_images TO authenticated;
+```
+
+### Step 2: Storage Bucket Setup
+1.  Go to **Storage** and create a new bucket named `site-photos`.
+2.  Set the bucket to **Public**.
+3.  Run this SQL to allow authenticated users to manage their own folders:
+
+```sql
+-- Allow users to upload to their own folder (Path: user_id/...)
+CREATE POLICY "Allow individual uploads" ON storage.objects FOR INSERT TO authenticated 
+WITH CHECK (bucket_id = 'site-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Allow users to view their own files
+CREATE POLICY "Allow individual views" ON storage.objects FOR SELECT TO authenticated 
+USING (bucket_id = 'site-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+-- Allow users to delete their own files
+CREATE POLICY "Allow individual deletes" ON storage.objects FOR DELETE TO authenticated 
+USING (bucket_id = 'site-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+```
+
+---
+
+# 10. Project Evolution (MVP to Pro)
 This system evolved from a simple mapping tool into a professional compliance platform through rigorous field testing, implementing complex GPS smoothing, background synchronization, and hands-free voice automation.
+
+---
+
+# Author
+Teekay Vuyisile Manale
