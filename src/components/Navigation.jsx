@@ -28,7 +28,7 @@ const Navigation = () => {
                     <Nav className="ms-auto align-items-center">
                         {user ? (
                             <>
-                                <Nav.Link as={Link} to="/">Dashboard</Nav.Link>
+                                <Nav.Link as={Link} to="/dashboard">Dashboard</Nav.Link>
                                 <Nav.Link as={Link} to="/map">Map View</Nav.Link>
                                 <span className="text-light mx-3 d-none d-lg-inline">
                                     {user.email}

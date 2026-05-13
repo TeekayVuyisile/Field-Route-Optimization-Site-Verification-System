@@ -69,7 +69,7 @@ const TripReview = () => {
             } catch (error) {
                 console.error('Error fetching trip data:', error.message);
                 toast.error('Failed to load trip data');
-                navigate('/');
+                navigate('/dashboard');
             } finally {
                 setLoading(false);
             }
@@ -264,7 +264,7 @@ const TripReview = () => {
     return (
         <Container className="mb-5">
             <div className="d-flex align-items-center mb-4 pt-3">
-                <Button variant="link" as={Link} to="/" className="text-decoration-none p-0 me-3">
+                <Button variant="link" as={Link} to="/dashboard" className="text-decoration-none p-0 me-3">
                     <FaArrowLeft /> Back to Dashboard
                 </Button>
             </div>

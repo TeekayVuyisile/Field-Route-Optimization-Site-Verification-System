@@ -418,7 +418,7 @@ const MapView = () => {
         return (
             <Container className="text-center mt-5">
                 <h3>No active trip to map</h3>
-                <Button onClick={() => navigate('/')}>Dashboard</Button>
+                <Button onClick={() => navigate('/dashboard')}>Dashboard</Button>
             </Container>
         );
     }

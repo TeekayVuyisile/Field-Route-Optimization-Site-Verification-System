@@ -1,0 +1,106 @@
+.landing-page {
+    overflow-x: hidden;
+}
+
+.hero-section {
+    padding: 80px 0;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.min-vh-75 {
+    min-height: 75vh;
+}
+
+.bg-primary-soft {
+    background-color: rgba(13, 110, 253, 0.1);
+}
+
+.feature-card {
+    transition: all 0.3s ease;
+    border-radius: 16px;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1) !important;
+}
+
+.icon-wrapper {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background-color: rgba(13, 110, 253, 0.1);
+    color: #0d6efd;
+    font-size: 1.5rem;
+}
+
+.step-number {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #0d6efd;
+    color: white;
+    border-radius: 50%;
+    font-weight: bold;
+    font-size: 1.2rem;
+    box-shadow: 0 4px 10px rgba(13, 110, 253, 0.3);
+}
+
+.hero-image-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 400px;
+}
+
+.hero-main-visual {
+    width: 300px;
+    height: 300px;
+    background: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.05);
+    position: relative;
+    z-index: 1;
+}
+
+.route-main-icon {
+    font-size: 120px;
+    color: #0d6efd;
+    filter: drop-shadow(0 10px 10px rgba(13, 110, 253, 0.2));
+}
+
+.hero-card-decorator {
+    position: absolute;
+    top: 20px;
+    right: 50px;
+    z-index: 2;
+    width: 220px;
+}
+
+.cta-section {
+    background: linear-gradient(135deg, #0d6efd 0%, #004dc2 100%) !important;
+}
+
+@media (max-width: 768px) {
+    .hero-section {
+        padding: 40px 0;
+        text-align: center;
+    }
+    
+    .hero-section .d-flex {
+        justify-content: center;
+    }
+
+    .min-vh-75 {
+        min-height: auto;
+    }
+}
