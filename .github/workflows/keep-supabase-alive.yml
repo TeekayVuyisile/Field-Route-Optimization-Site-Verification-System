@@ -1,0 +1,41 @@
+name: Keep Supabase Active
+
+# Supabase free-tier projects pause automatically after 7 days with no API
+# activity. This workflow pings the project's REST API every 3 days (safely
+# under that threshold) so the database never gets paused.
+
+on:
+  schedule:
+    - cron: '0 8 */3 * *' # 08:00 UTC, every 3 days
+  workflow_dispatch: {} # allows manually triggering a run from the Actions tab
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST endpoint
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Missing SUPABASE_URL or SUPABASE_ANON_KEY repository secret."
+            exit 1
+          fi
+
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 15 \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/")
+
+          echo "Supabase responded with HTTP ${status}"
+
+          # Anything below 500 means the project answered (even a 401/404 is
+          # a live response from the API gateway/database). Only treat
+          # unreachable/server-error responses as a real failure.
+          if [ "$status" -lt 200 ] || [ "$status" -ge 500 ]; then
+            echo "::error::Supabase project appears unreachable (HTTP ${status})."
+            exit 1
+          fi
+
+          echo "Supabase project is active."
