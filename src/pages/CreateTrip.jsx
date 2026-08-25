@@ -1,13 +1,31 @@
 import { useState, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button, Table, Alert } from 'react-bootstrap';
+import { Container, Row, Col, Card, Form, Button, Table } from 'react-bootstrap';
+import { motion } from 'framer-motion';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
-import { FaUpload, FaTable, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard, FaPlus  } from 'react-icons/fa';
+import { FaUpload, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard, FaPlus, FaCheck } from 'react-icons/fa';
 import { validateCoordinates } from '../utils/validation';
 import useTripStore from '../store/useTripStore';
 import ManualSiteModal from '../components/ManualSiteModal';
+
+const STEPS = ['Title', 'Method', 'Source', 'Preview'];
+
+const StepHeader = ({ step }) => (
+    <div className="create-trip-stepper mb-4">
+        {STEPS.map((label, index) => {
+            const num = index + 1;
+            const state = num < step ? 'done' : num === step ? 'active' : 'pending';
+            return (
+                <div key={label} className={`stepper-node is-${state}`}>
+                    <span className="stepper-dot">{state === 'done' ? <FaCheck size={11} /> : num}</span>
+                    <span className="stepper-label">{label}</span>
+                </div>
+            );
+        })}
+    </div>
+);
 
 const CreateTrip = () => {
     const [fileData, setFileData] = useState([]);
@@ -17,7 +35,7 @@ const CreateTrip = () => {
     const [step, setStep] = useState(1); // 1: Title, 2: Choose Method, 3: Upload, 4: Map/Preview
     const [previewSites, setPreviewSites] = useState([]);
     const [showManualModal, setShowManualModal] = useState(false);
-    
+
     const fileInputRef = useRef();
     const navigate = useNavigate();
     const { setSites, setCurrentTrip } = useTripStore();
@@ -127,23 +145,26 @@ const CreateTrip = () => {
     };
 
     return (
-        <Container className="mb-5">
-            <h1 className="mb-4">Create New Trip</h1>
+        <Container className="page-shell" style={{ maxWidth: '920px' }}>
+            <h1 className="fw-bold mb-1" style={{ color: 'var(--ink)' }}>Create New Trip</h1>
+            <p className="text-muted mb-4">Set up a new site verification run in a few steps.</p>
+
+            <StepHeader step={step} />
 
             {step === 1 && (
-                <Card>
-                    <Card.Body>
+                <Card className="border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                    <Card.Body className="p-4">
                         <Form.Group className="mb-3">
                             <Form.Label>Trip Title</Form.Label>
-                            <Form.Control 
-                                type="text" 
+                            <Form.Control
+                                type="text"
                                 placeholder="e.g. Cape Town Inspection Jan 2026"
                                 value={tripTitle}
                                 onChange={(e) => setTripTitle(e.target.value)}
                             />
                         </Form.Group>
-                        <Button 
-                            disabled={!tripTitle} 
+                        <Button
+                            disabled={!tripTitle}
                             onClick={() => setStep(2)}
                         >
                             Next: Select Entry Method
@@ -153,28 +174,40 @@ const CreateTrip = () => {
             )}
 
             {step === 2 && (
-                <Row>
-                    <Col md={6} className="mb-3">
-                        <Card className="h-100 text-center p-4 cursor-pointer hover-shadow border-primary" onClick={() => setStep(3)}>
-                            <Card.Body>
-                                <FaUpload size={48} className="text-primary mb-3" />
-                                <h3>Upload File</h3>
-                                <p className="text-muted">Import sites from a CSV or Excel spreadsheet.</p>
-                                <Button variant="outline-primary">Choose File</Button>
-                            </Card.Body>
-                        </Card>
+                <Row className="g-3">
+                    <Col md={6}>
+                        <motion.div whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}>
+                            <Card
+                                className="h-100 text-center p-4 choice-card"
+                                onClick={() => setStep(3)}
+                                role="button"
+                            >
+                                <Card.Body>
+                                    <span className="icon-chip is-lg mx-auto mb-3"><FaUpload /></span>
+                                    <h5 className="fw-bold" style={{ color: 'var(--ink)' }}>Upload File</h5>
+                                    <p className="text-muted small">Import sites from a CSV or Excel spreadsheet.</p>
+                                    <Button variant="outline-primary" size="sm">Choose File</Button>
+                                </Card.Body>
+                            </Card>
+                        </motion.div>
                     </Col>
-                    <Col md={6} className="mb-3">
-                        <Card className="h-100 text-center p-4 cursor-pointer hover-shadow" onClick={() => { setStep(4); setPreviewSites([]); }}>
-                            <Card.Body>
-                                <FaKeyboard size={48} className="text-secondary mb-3" />
-                                <h3>Manual Entry</h3>
-                                <p className="text-muted">Type in site names and coordinates one by one.</p>
-                                <Button variant="outline-secondary">Start Typing</Button>
-                            </Card.Body>
-                        </Card>
+                    <Col md={6}>
+                        <motion.div whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}>
+                            <Card
+                                className="h-100 text-center p-4 choice-card"
+                                onClick={() => { setStep(4); setPreviewSites([]); }}
+                                role="button"
+                            >
+                                <Card.Body>
+                                    <span className="icon-chip is-lg mx-auto mb-3"><FaKeyboard /></span>
+                                    <h5 className="fw-bold" style={{ color: 'var(--ink)' }}>Manual Entry</h5>
+                                    <p className="text-muted small">Type in site names and coordinates one by one.</p>
+                                    <Button variant="outline-secondary" size="sm">Start Typing</Button>
+                                </Card.Body>
+                            </Card>
+                        </motion.div>
                     </Col>
-                    <Col xs={12} className="text-center mt-3">
+                    <Col xs={12} className="text-center mt-2">
                         <Button variant="link" onClick={() => setStep(1)}>Back</Button>
                     </Col>
                 </Row>
@@ -183,13 +216,13 @@ const CreateTrip = () => {
             {step === 3 && (
                 <Card className="text-center p-5 border-dashed">
                     <Card.Body>
-                        <FaUpload size={48} className="text-primary mb-3" />
-                        <h3>Upload Coordinates</h3>
+                        <span className="icon-chip is-lg mx-auto mb-3"><FaUpload /></span>
+                        <h5 className="fw-bold" style={{ color: 'var(--ink)' }}>Upload Coordinates</h5>
                         <p className="text-muted">Upload a CSV or Excel file.</p>
-                        <input 
-                            type="file" 
-                            hidden 
-                            ref={fileInputRef} 
+                        <input
+                            type="file"
+                            hidden
+                            ref={fileInputRef}
                             accept=".csv, .xlsx, .xls"
                             onChange={handleFileUpload}
                         />
@@ -206,14 +239,14 @@ const CreateTrip = () => {
             {step === 4 && (
                 <>
                     {fileData.length > 0 && (
-                        <Card className="mb-4">
-                            <Card.Header>Column Mapping</Card.Header>
+                        <Card className="mb-4 border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                            <Card.Header className="bg-transparent fw-bold" style={{ color: 'var(--ink)' }}>Column Mapping</Card.Header>
                             <Card.Body>
                                 <Row>
                                     <Col md={4}>
                                         <Form.Group className="mb-3">
                                             <Form.Label>Site Name Column</Form.Label>
-                                            <Form.Select 
+                                            <Form.Select
                                                 value={mapping.name}
                                                 onChange={(e) => setMapping({...mapping, name: e.target.value})}
                                             >
@@ -225,7 +258,7 @@ const CreateTrip = () => {
                                     <Col md={4}>
                                         <Form.Group className="mb-3">
                                             <Form.Label>Latitude Column</Form.Label>
-                                            <Form.Select 
+                                            <Form.Select
                                                 value={mapping.lat}
                                                 onChange={(e) => setMapping({...mapping, lat: e.target.value})}
                                             >
@@ -237,7 +270,7 @@ const CreateTrip = () => {
                                     <Col md={4}>
                                         <Form.Group className="mb-3">
                                             <Form.Label>Longitude Column</Form.Label>
-                                            <Form.Select 
+                                            <Form.Select
                                                 value={mapping.lng}
                                                 onChange={(e) => setMapping({...mapping, lng: e.target.value})}
                                             >
@@ -252,9 +285,9 @@ const CreateTrip = () => {
                         </Card>
                     )}
 
-                    <Card>
-                        <Card.Header className="d-flex justify-content-between align-items-center">
-                            <span>Preview & Validation ({previewSites.length} sites)</span>
+                    <Card className="border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                        <Card.Header className="bg-transparent d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <span className="fw-bold" style={{ color: 'var(--ink)' }}>Preview &amp; Validation ({previewSites.length} sites)</span>
                             <div>
                                 <Button variant="outline-primary" size="sm" className="me-2" onClick={() => setShowManualModal(true)}>
                                     <FaPlus className="me-1" /> Add Row
@@ -264,7 +297,7 @@ const CreateTrip = () => {
                         </Card.Header>
                         <Card.Body>
                             {previewSites.length > 0 ? (
-                                <Table responsive hover>
+                                <Table responsive hover className="align-middle">
                                     <thead>
                                         <tr>
                                             <th>Site Name</th>
@@ -276,32 +309,32 @@ const CreateTrip = () => {
                                     </thead>
                                     <tbody>
                                         {previewSites.map((site) => (
-                                            <tr key={site.id} className={!site.isValid ? 'table-warning' : ''}>
+                                            <tr key={site.id}>
                                                 <td>{site.name}</td>
                                                 <td>{site.latitude}</td>
                                                 <td>{site.longitude}</td>
                                                 <td>
                                                     {site.isValid ? (
-                                                        <span className="text-success small">Ready</span>
+                                                        <span className="status-badge is-success">Ready</span>
                                                     ) : (
-                                                        <div className="text-danger small">
-                                                            <FaExclamationTriangle className="me-1" />
+                                                        <span className="status-badge is-warning">
+                                                            <FaExclamationTriangle size={11} />
                                                             {site.error}
-                                                        </div>
+                                                        </span>
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <Button 
-                                                        variant="outline-secondary" 
-                                                        size="sm" 
+                                                    <Button
+                                                        variant="outline-secondary"
+                                                        size="sm"
                                                         className="me-2"
                                                         onClick={() => handleSwap(site.id)}
                                                         title="Swap Coordinates"
                                                     >
                                                         <FaExchangeAlt />
                                                     </Button>
-                                                    <Button 
-                                                        variant="outline-danger" 
+                                                    <Button
+                                                        variant="outline-danger"
                                                         size="sm"
                                                         onClick={() => handleDelete(site.id)}
                                                     >
@@ -322,10 +355,10 @@ const CreateTrip = () => {
                 </>
             )}
 
-            <ManualSiteModal 
-                show={showManualModal} 
-                onHide={() => setShowManualModal(false)} 
-                onAdd={handleAddManualSite} 
+            <ManualSiteModal
+                show={showManualModal}
+                onHide={() => setShowManualModal(false)}
+                onAdd={handleAddManualSite}
             />
         </Container>
     );

@@ -1,11 +1,14 @@
 import { Navbar, Nav, Container, Button } from 'react-bootstrap';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { FaRoute } from 'react-icons/fa';
+import { FaRoute, FaSignOutAlt } from 'react-icons/fa';
+import './Navigation.css';
 
 const Navigation = () => {
     const { user, signOut } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const handleLogout = async () => {
         try {
@@ -16,31 +19,46 @@ const Navigation = () => {
         }
     };
 
+    const isActive = (path) => location.pathname === path;
+
     return (
-        <Navbar bg="dark" variant="dark" expand="lg" className="mb-4">
+        <Navbar expand="lg" className="app-navbar" sticky="top">
             <Container>
-                <Navbar.Brand as={Link} to="/">
-                    <FaRoute className="me-2" />
+                <Navbar.Brand as={Link} to="/" className="app-brand">
+                    <motion.span
+                        className="brand-mark"
+                        whileHover={{ scale: 1.06, rotate: -4 }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 15 }}
+                    >
+                        <FaRoute />
+                    </motion.span>
                     RouteOps
                 </Navbar.Brand>
-                <Navbar.Toggle aria-controls="basic-navbar-nav" />
-                <Navbar.Collapse id="basic-navbar-nav">
-                    <Nav className="ms-auto align-items-center">
+                <Navbar.Toggle aria-controls="main-nav" />
+                <Navbar.Collapse id="main-nav">
+                    <Nav className="ms-auto align-items-lg-center gap-lg-1">
                         {user ? (
                             <>
-                                <Nav.Link as={Link} to="/dashboard">Dashboard</Nav.Link>
-                                <Nav.Link as={Link} to="/map">Map View</Nav.Link>
-                                <span className="text-light mx-3 d-none d-lg-inline">
-                                    {user.email}
-                                </span>
-                                <Button variant="outline-light" size="sm" onClick={handleLogout}>
-                                    Logout
-                                </Button>
+                                <Nav.Link as={Link} to="/dashboard" className={`nav-pill ${isActive('/dashboard') ? 'is-active' : ''}`}>
+                                    Dashboard
+                                </Nav.Link>
+                                <Nav.Link as={Link} to="/map" className={`nav-pill ${isActive('/map') ? 'is-active' : ''}`}>
+                                    Map View
+                                </Nav.Link>
+                                <div className="user-chip">
+                                    <span className="user-chip-avatar">{user.email?.[0]?.toUpperCase()}</span>
+                                    <span className="user-chip-email d-none d-xl-inline">{user.email}</span>
+                                    <button className="user-chip-logout" onClick={handleLogout} title="Log out" aria-label="Log out">
+                                        <FaSignOutAlt />
+                                    </button>
+                                </div>
                             </>
                         ) : (
                             <>
-                                <Nav.Link as={Link} to="/login">Login</Nav.Link>
-                                <Nav.Link as={Link} to="/register">Register</Nav.Link>
+                                <Nav.Link as={Link} to="/login" className="nav-pill">Login</Nav.Link>
+                                <Button as={Link} to="/register" variant="primary" size="sm" className="ms-lg-2 px-3">
+                                    Get Started
+                                </Button>
                             </>
                         )}
                     </Nav>

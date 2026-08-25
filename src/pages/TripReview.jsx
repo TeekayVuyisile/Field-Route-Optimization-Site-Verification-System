@@ -1,20 +1,26 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Form, Modal, Image } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Button, Spinner, Form, Modal, Image } from 'react-bootstrap';
+import { motion } from 'framer-motion';
 import { supabase } from '../lib/supabase';
-import { 
-    flexRender, 
-    getCoreRowModel, 
-    useReactTable, 
+import {
+    flexRender,
+    getCoreRowModel,
+    useReactTable,
     getSortedRowModel,
     getFilteredRowModel
 } from '@tanstack/react-table';
-import { 
-    FaArrowLeft, FaDownload, FaCheckCircle, FaTimesCircle, 
-    FaMapMarkedAlt, FaTrash, FaEye, FaCamera 
+import {
+    FaArrowLeft, FaDownload, FaCheckCircle, FaTimesCircle,
+    FaMapMarkedAlt, FaTrash, FaCamera, FaChevronUp, FaChevronDown
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import useTripStore from '../store/useTripStore';
+
+const statTileVariants = {
+    hidden: { opacity: 0, y: 14 },
+    visible: (i) => ({ opacity: 1, y: 0, transition: { duration: 0.4, delay: i * 0.06, ease: [0.16, 1, 0.3, 1] } })
+};
 
 const TripReview = () => {
     const { id } = useParams();
@@ -147,9 +153,9 @@ const TripReview = () => {
             accessorKey: 'is_checked',
             header: 'Status',
             cell: ({ getValue }) => (
-                getValue() ? 
-                <Badge bg="success"><FaCheckCircle className="me-1" /> Verified</Badge> : 
-                <Badge bg="secondary"><FaTimesCircle className="me-1" /> Pending</Badge>
+                getValue() ?
+                <span className="status-badge is-success"><FaCheckCircle size={11} /> Verified</span> :
+                <span className="status-badge is-neutral"><FaTimesCircle size={11} /> Pending</span>
             )
         },
         {
@@ -262,100 +268,88 @@ const TripReview = () => {
         : 0;
 
     return (
-        <Container className="mb-5">
-            <div className="d-flex align-items-center mb-4 pt-3">
+        <Container className="page-shell">
+            <div className="d-flex align-items-center mb-4">
                 <Button variant="link" as={Link} to="/dashboard" className="text-decoration-none p-0 me-3">
-                    <FaArrowLeft /> Back to Dashboard
+                    <FaArrowLeft className="me-1" /> Back to Dashboard
                 </Button>
             </div>
 
             <Row className="mb-4 align-items-center">
                 <Col md={8}>
-                    <h1 className="mb-1 fw-bold">{trip?.title}</h1>
-                    <p className="text-muted">
-                        Created on {new Date(trip?.created_at).toLocaleDateString()} • {sites.length} Total Sites
+                    <h1 className="mb-1 fw-bold" style={{ color: 'var(--ink)' }}>{trip?.title}</h1>
+                    <p className="text-muted mb-0">
+                        Created on {new Date(trip?.created_at).toLocaleDateString()} · {sites.length} total sites
                     </p>
                 </Col>
-                <Col md={4} className="text-md-end">
-                    <Button variant="outline-primary" className="me-2 rounded-pill" onClick={exportToCSV}>
+                <Col md={4} className="text-md-end mt-3 mt-md-0">
+                    <Button variant="outline-primary" className="me-2" onClick={exportToCSV}>
                         <FaDownload className="me-2" /> Export Report
                     </Button>
-                    <Button variant="primary" className="rounded-pill" onClick={handleResumeMap}>
+                    <Button variant="primary" onClick={handleResumeMap}>
                         <FaMapMarkedAlt className="me-2" /> Resume Map
                     </Button>
                 </Col>
             </Row>
 
             <Row className="mb-4 g-3">
-                <Col md={3}>
-                    <Card className="text-center shadow-sm h-100 border-0">
-                        <Card.Body>
-                            <Card.Title className="text-muted small text-uppercase fw-bold">Completion</Card.Title>
-                            <h2 className="mb-0 fw-bold">{completionRate}%</h2>
-                            <div className="progress mt-2" style={{ height: '8px' }}>
-                                <div 
-                                    className={`progress-bar ${completionRate === 100 ? 'bg-success' : 'bg-primary'}`} 
-                                    role="progressbar" 
-                                    style={{ width: `${completionRate}%` }}
-                                ></div>
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="text-center shadow-sm h-100 border-0">
-                        <Card.Body>
-                            <Card.Title className="text-muted small text-uppercase fw-bold">Verified</Card.Title>
-                            <h2 className="mb-0 text-success fw-bold">{sites.filter(s => s.is_checked).length}</h2>
-                            <p className="small text-muted mb-0">sites checked</p>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="text-center shadow-sm h-100 border-0">
-                        <Card.Body>
-                            <Card.Title className="text-muted small text-uppercase fw-bold">Pending</Card.Title>
-                            <h2 className="mb-0 text-warning fw-bold">{sites.filter(s => !s.is_checked).length}</h2>
-                            <p className="small text-muted mb-0">sites remaining</p>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
-                    <Card className="text-center shadow-sm h-100 border-0">
-                        <Card.Body>
-                            <Card.Title className="text-muted small text-uppercase fw-bold">Evidence</Card.Title>
-                            <h2 className="mb-0 text-info fw-bold">{images.length}</h2>
-                            <p className="small text-muted mb-0"><FaCamera className="me-1" /> Photos Captured</p>
-                        </Card.Body>
-                    </Card>
-                </Col>
+                {[
+                    { label: 'Completion', value: `${completionRate}%`, extra: (
+                        <div className="progress mt-2" style={{ height: '6px', borderRadius: '999px' }}>
+                            <div
+                                className="progress-bar"
+                                role="progressbar"
+                                style={{ width: `${completionRate}%`, backgroundColor: completionRate === 100 ? 'var(--success)' : 'var(--accent)', borderRadius: '999px' }}
+                            ></div>
+                        </div>
+                    ) },
+                    { label: 'Verified', value: sites.filter(s => s.is_checked).length, sub: 'sites checked' },
+                    { label: 'Pending', value: sites.filter(s => !s.is_checked).length, sub: 'sites remaining' },
+                    { label: 'Evidence', value: images.length, sub: <><FaCamera className="me-1" />photos captured</> }
+                ].map((stat, i) => (
+                    <Col md={3} key={stat.label}>
+                        <motion.div
+                            className="stat-tile h-100"
+                            custom={i}
+                            initial="hidden"
+                            animate="visible"
+                            variants={statTileVariants}
+                        >
+                            <div className="stat-label">{stat.label}</div>
+                            <div className="stat-value">{stat.value}</div>
+                            {stat.sub && <p className="small text-muted mb-0 mt-1">{stat.sub}</p>}
+                            {stat.extra}
+                        </motion.div>
+                    </Col>
+                ))}
             </Row>
 
-            <Card className="shadow-sm border-0 overflow-hidden" style={{ borderRadius: '15px' }}>
-                <Card.Header className="bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center">
-                    <h4 className="mb-0 fw-bold">Verification Log</h4>
+            <Card className="border-0 overflow-hidden" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                <Card.Header className="bg-white border-0 pt-4 px-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 className="mb-0 fw-bold" style={{ color: 'var(--ink)' }}>Verification Log</h5>
                     <Form.Group style={{ width: '250px' }}>
-                        <Form.Control 
+                        <Form.Control
                             type="text"
                             placeholder="Search sites or notes..."
                             value={globalFilter ?? ''}
                             onChange={e => setGlobalFilter(e.target.value)}
-                            className="bg-light border-0 rounded-pill px-3"
                         />
                     </Form.Group>
                 </Card.Header>
                 <Card.Body className="p-0">
-                    <Table responsive hover className="align-middle mb-0">
-                        <thead className="bg-light">
+                    <Table responsive hover className="trip-table align-middle mb-0">
+                        <thead>
                             {table.getHeaderGroups().map(headerGroup => (
                                 <tr key={headerGroup.id}>
                                     {headerGroup.headers.map(header => (
-                                        <th key={header.id} className="border-0 px-4 py-3 text-muted text-uppercase small" onClick={header.column.getToggleSortingHandler()} style={{ cursor: 'pointer' }}>
-                                            {flexRender(header.column.columnDef.header, header.getContext())}
-                                            {{
-                                                asc: ' ↑',
-                                                desc: ' ↓',
-                                            }[header.column.getIsSorted()] ?? null}
+                                        <th key={header.id} onClick={header.column.getToggleSortingHandler()}>
+                                            <span className="d-inline-flex align-items-center gap-1">
+                                                {flexRender(header.column.columnDef.header, header.getContext())}
+                                                {{
+                                                    asc: <FaChevronUp size={10} />,
+                                                    desc: <FaChevronDown size={10} />,
+                                                }[header.column.getIsSorted()] ?? null}
+                                            </span>
                                         </th>
                                     ))}
                                 </tr>
@@ -365,7 +359,7 @@ const TripReview = () => {
                             {table.getRowModel().rows.map(row => (
                                 <tr key={row.id}>
                                     {row.getVisibleCells().map(cell => (
-                                        <td key={cell.id} className="px-4 py-3 border-light">
+                                        <td key={cell.id}>
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                         </td>
                                     ))}
@@ -378,24 +372,24 @@ const TripReview = () => {
 
             {/* Image Preview Modal */}
             <Modal show={showGallery} onHide={() => setShowGallery(false)} centered size="lg">
-                <Modal.Header closeButton>
-                    <Modal.Title>Site Evidence: {selectedImage?.file_name}</Modal.Title>
+                <Modal.Header closeButton className="border-0">
+                    <Modal.Title className="fw-bold" style={{ color: 'var(--ink)' }}>Site Evidence: {selectedImage?.file_name}</Modal.Title>
                 </Modal.Header>
                 <Modal.Body className="text-center bg-black p-0">
                     {selectedImage && (
-                        <Image 
-                            src={selectedImage.url} 
-                            fluid 
+                        <Image
+                            src={selectedImage.url}
+                            fluid
                             style={{ maxHeight: '70vh' }}
                         />
                     )}
                 </Modal.Body>
-                <Modal.Footer className="justify-content-between">
+                <Modal.Footer className="justify-content-between border-0">
                     <Button variant="outline-danger" onClick={() => handleDeleteImage(selectedImage)}>
                         <FaTrash className="me-2" /> Delete Photo
                     </Button>
                     <div>
-                        <Button variant="secondary" className="me-2" onClick={() => setShowGallery(false)}>
+                        <Button variant="outline-secondary" className="me-2" onClick={() => setShowGallery(false)}>
                             Close
                         </Button>
                         <Button variant="primary" onClick={() => handleDownloadImage(selectedImage)}>

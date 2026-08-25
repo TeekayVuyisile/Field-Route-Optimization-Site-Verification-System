@@ -1,0 +1,115 @@
+.app-navbar {
+    background: var(--ink);
+    padding: 0.7rem 0;
+    min-height: 64px;
+    max-height: 72px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    z-index: 1030;
+}
+
+.app-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: #fff !important;
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: -0.01em;
+}
+
+.brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 0.95rem;
+}
+
+.nav-pill {
+    color: rgba(255, 255, 255, 0.72) !important;
+    font-weight: 600;
+    font-size: 0.92rem;
+    padding: 0.5rem 0.9rem !important;
+    border-radius: var(--radius-pill);
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.nav-pill:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-pill.is-active {
+    color: #fff !important;
+    background: var(--accent);
+}
+
+.user-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-left: 0.75rem;
+    padding: 0.3rem 0.5rem 0.3rem 0.3rem;
+    border-radius: var(--radius-pill);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.user-chip-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.user-chip-email {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.85rem;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-chip-logout {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.user-chip-logout:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+
+@media (max-width: 991.98px) {
+    .app-navbar {
+        max-height: none;
+    }
+    .nav-pill {
+        color: rgba(255, 255, 255, 0.85) !important;
+    }
+    .user-chip {
+        margin: 0.5rem 0 0.25rem;
+        width: 100%;
+        justify-content: space-between;
+    }
+}

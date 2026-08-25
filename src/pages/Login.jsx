@@ -1,7 +1,11 @@
 import { useState } from 'react';
-import { Form, Button, Card, Container, Alert } from 'react-bootstrap';
+import { Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { FaRoute } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import AuthPanel from '../components/AuthPanel';
+import './Auth.css';
 
 const Login = () => {
     const [email, setEmail] = useState('');
@@ -27,42 +31,56 @@ const Login = () => {
     };
 
     return (
-        <Container className="d-flex align-items-center justify-content-center" style={{ minHeight: '80vh' }}>
-            <div className="w-100" style={{ maxWidth: '400px' }}>
-                <Card>
-                    <Card.Body>
-                        <h2 className="text-center mb-4">Log In</h2>
-                        {error && <Alert variant="danger">{error}</Alert>}
-                        <Form onSubmit={handleSubmit}>
-                            <Form.Group id="email" className="mb-3">
-                                <Form.Label>Email Address</Form.Label>
-                                <Form.Control
-                                    type="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                />
-                            </Form.Group>
-                            <Form.Group id="password" id="password_group" className="mb-3">
-                                <Form.Label>Password</Form.Label>
-                                <Form.Control
-                                    type="password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                />
-                            </Form.Group>
-                            <Button disabled={loading} className="w-100 mt-2" type="submit">
-                                {loading ? 'Logging in...' : 'Log In'}
-                            </Button>
-                        </Form>
-                    </Card.Body>
-                </Card>
-                <div className="w-100 text-center mt-2">
-                    Don't have an account? <Link to="/register">Register</Link>
-                </div>
+        <div className="auth-shell">
+            <AuthPanel
+                tagline="Welcome back"
+                headline="Sign in to pick up your next trip."
+            />
+            <div className="auth-form-side">
+                <motion.div
+                    className="auth-form-card"
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                >
+                    <div className="auth-mobile-brand d-lg-none">
+                        <span className="brand-mark"><FaRoute /></span> RouteOps
+                    </div>
+                    <h2 className="auth-title">Log In</h2>
+                    <p className="auth-subtitle">Enter your credentials to continue.</p>
+
+                    {error && <Alert variant="danger">{error}</Alert>}
+
+                    <Form onSubmit={handleSubmit}>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Email Address</Form.Label>
+                            <Form.Control
+                                type="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                            />
+                        </Form.Group>
+                        <Form.Group className="mb-4">
+                            <Form.Label>Password</Form.Label>
+                            <Form.Control
+                                type="password"
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                        </Form.Group>
+                        <Button disabled={loading} className="w-100" type="submit" size="lg">
+                            {loading ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+                            {loading ? 'Logging in...' : 'Log In'}
+                        </Button>
+                    </Form>
+                    <div className="auth-switch">
+                        Don't have an account? <Link to="/register">Register</Link>
+                    </div>
+                </motion.div>
             </div>
-        </Container>
+        </div>
     );
 };
 

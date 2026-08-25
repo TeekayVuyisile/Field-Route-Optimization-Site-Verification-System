@@ -1,40 +1,339 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+/* ============================================================
+   ROUTEOPS DESIGN TOKENS
+   Deep Navy + Electric Blue system, layered on top of Bootstrap 5.
+   One accent, one radius rule per element family, tinted shadows.
+   ============================================================ */
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, Liberation Sans, sans-serif;
-  line-height: 1.5;
+  color-scheme: light;
+
+  /* Palette */
+  --ink: #0B1220;
+  --ink-soft: #1E293B;
+  --accent: #2563EB;
+  --accent-hover: #1D4ED8;
+  --accent-soft: #EFF4FF;
+  --accent-soft-strong: #DBE7FF;
+
+  --surface: #F8FAFC;
+  --surface-alt: #F1F5F9;
+  --surface-card: #FFFFFF;
+  --border: #E2E8F0;
+  --border-strong: #CBD5E1;
+
+  --text-body: #1E293B;
+  --text-muted: #64748B;
+  --text-faint: #94A3B8;
+
+  --success: #10B981;
+  --success-soft: #E7F9F1;
+  --warning: #F59E0B;
+  --warning-soft: #FEF3E2;
+  --danger: #E11D48;
+  --danger-soft: #FDECEF;
+  --info: #0EA5E9;
+  --info-soft: #E7F6FE;
+
+  /* Shape (locked per element family, do not mix) */
+  --radius-pill: 999px;
+  --radius-card: 14px;
+  --radius-input: 10px;
+
+  /* Shadows, tinted toward ink (never pure black) */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14), 0 8px 20px rgba(15, 23, 42, 0.08);
+
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  font-family: var(--font-sans);
+  line-height: 1.55;
   font-weight: 400;
 
-  color-scheme: light dark;
-  background-color: #f8f9fa;
+  background-color: var(--surface);
+  color: var(--text-body);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* ---- Bootstrap variable remap ---- */
+  --bs-body-font-family: var(--font-sans);
+  --bs-body-bg: var(--surface);
+  --bs-body-color: var(--text-body);
+  --bs-border-color: var(--border);
+  --bs-secondary-color: var(--text-muted);
+  --bs-emphasis-color: var(--ink);
+
+  --bs-border-radius: var(--radius-card);
+  --bs-border-radius-sm: var(--radius-input);
+  --bs-border-radius-lg: var(--radius-card);
+  --bs-border-radius-xl: 20px;
+
+  --bs-primary: var(--accent);
+  --bs-primary-rgb: 37, 99, 235;
+  --bs-secondary: var(--ink-soft);
+  --bs-secondary-rgb: 30, 41, 59;
+  --bs-success: var(--success);
+  --bs-success-rgb: 16, 185, 129;
+  --bs-info: var(--info);
+  --bs-info-rgb: 14, 165, 233;
+  --bs-warning: var(--warning);
+  --bs-warning-rgb: 245, 158, 11;
+  --bs-danger: var(--danger);
+  --bs-danger-rgb: 225, 29, 72;
+  --bs-light: var(--surface-alt);
+  --bs-light-rgb: 241, 245, 249;
+  --bs-dark: var(--ink);
+  --bs-dark-rgb: 11, 18, 32;
+
+  --bs-link-color: var(--accent);
+  --bs-link-color-rgb: 37, 99, 235;
+  --bs-link-hover-color: var(--accent-hover);
+  --bs-link-hover-color-rgb: 29, 78, 216;
+
+  --bs-list-group-active-bg: var(--accent);
+  --bs-list-group-active-border-color: var(--accent);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-content: flex-start;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--surface);
+  color: var(--text-body);
+  font-family: var(--font-sans);
 }
 
 #root {
   width: 100%;
 }
 
-.border-dashed {
-  border: 2px dashed #dee2e6;
-  background-color: #fff;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  letter-spacing: -0.01em;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    background-color: #212529;
-  }
-  .border-dashed {
-    border-color: #495057;
-    background-color: #2c3034;
+a {
+  color: var(--accent);
+}
+a:hover {
+  color: var(--accent-hover);
+}
+
+::selection {
+  background: var(--accent-soft-strong);
+  color: var(--ink);
+}
+
+/* ---- Buttons: single pill shape everywhere ---- */
+.btn {
+  --bs-btn-border-radius: var(--radius-pill);
+  --bs-btn-focus-box-shadow: 0 0 0 0.2rem var(--accent-soft-strong);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--accent);
+  --bs-btn-border-color: var(--accent);
+  --bs-btn-hover-bg: var(--accent-hover);
+  --bs-btn-hover-border-color: var(--accent-hover);
+  --bs-btn-active-bg: var(--accent-hover);
+  --bs-btn-active-border-color: var(--accent-hover);
+  --bs-btn-disabled-bg: var(--accent);
+  --bs-btn-disabled-border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--accent);
+  --bs-btn-border-color: var(--accent);
+  --bs-btn-hover-bg: var(--accent);
+  --bs-btn-hover-border-color: var(--accent);
+  --bs-btn-active-bg: var(--accent);
+  --bs-btn-active-border-color: var(--accent);
+}
+.btn-secondary {
+  --bs-btn-bg: var(--ink-soft);
+  --bs-btn-border-color: var(--ink-soft);
+  --bs-btn-hover-bg: var(--ink);
+  --bs-btn-hover-border-color: var(--ink);
+}
+.btn-outline-secondary {
+  --bs-btn-color: var(--text-muted);
+  --bs-btn-border-color: var(--border-strong);
+  --bs-btn-hover-bg: var(--ink-soft);
+  --bs-btn-hover-border-color: var(--ink-soft);
+}
+.btn-success {
+  --bs-btn-bg: var(--success);
+  --bs-btn-border-color: var(--success);
+  --bs-btn-hover-bg: #0ea271;
+  --bs-btn-hover-border-color: #0ea271;
+}
+.btn-outline-success {
+  --bs-btn-color: var(--success);
+  --bs-btn-border-color: var(--success);
+  --bs-btn-hover-bg: var(--success);
+  --bs-btn-hover-border-color: var(--success);
+}
+.btn-danger {
+  --bs-btn-bg: var(--danger);
+  --bs-btn-border-color: var(--danger);
+  --bs-btn-hover-bg: #c81842;
+  --bs-btn-hover-border-color: #c81842;
+}
+.btn-outline-danger {
+  --bs-btn-color: var(--danger);
+  --bs-btn-border-color: var(--danger);
+  --bs-btn-hover-bg: var(--danger);
+  --bs-btn-hover-border-color: var(--danger);
+}
+.btn-warning {
+  --bs-btn-bg: var(--warning);
+  --bs-btn-border-color: var(--warning);
+  --bs-btn-color: var(--ink);
+  --bs-btn-hover-bg: #dd8c08;
+  --bs-btn-hover-border-color: #dd8c08;
+  --bs-btn-hover-color: var(--ink);
+}
+.btn-outline-warning {
+  --bs-btn-color: #b06806;
+  --bs-btn-border-color: var(--warning);
+  --bs-btn-hover-bg: var(--warning);
+  --bs-btn-hover-border-color: var(--warning);
+  --bs-btn-hover-color: var(--ink);
+}
+.btn-outline-info {
+  --bs-btn-color: var(--info);
+  --bs-btn-border-color: var(--info);
+  --bs-btn-hover-bg: var(--info);
+  --bs-btn-hover-border-color: var(--info);
+  --bs-btn-hover-color: #fff;
+}
+.btn-light {
+  --bs-btn-bg: #fff;
+  --bs-btn-border-color: var(--border);
+  --bs-btn-color: var(--ink);
+  --bs-btn-hover-bg: var(--surface-alt);
+  --bs-btn-hover-border-color: var(--border-strong);
+}
+.btn-outline-light {
+  --bs-btn-color: #fff;
+  --bs-btn-border-color: rgba(255, 255, 255, 0.5);
+  --bs-btn-hover-bg: rgba(255, 255, 255, 0.12);
+  --bs-btn-hover-border-color: #fff;
+  --bs-btn-hover-color: #fff;
+}
+.btn-dark {
+  --bs-btn-bg: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-hover-bg: #000000;
+  --bs-btn-hover-border-color: #000000;
+}
+.btn-link {
+  --bs-btn-color: var(--accent);
+  --bs-btn-hover-color: var(--accent-hover);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+/* ---- Forms ---- */
+.form-control,
+.form-select {
+  border-radius: var(--radius-input);
+  border-color: var(--border);
+  font-family: var(--font-sans);
+}
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0.2rem var(--accent-soft-strong);
+}
+.form-label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+  margin-bottom: 0.4rem;
+}
+.form-check-input:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+.form-check-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 0.2rem var(--accent-soft-strong);
+}
+
+/* ---- Badges & alerts ---- */
+.badge {
+  --bs-badge-border-radius: var(--radius-pill);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.alert {
+  border-radius: var(--radius-card);
+  border-width: 1px;
+}
+.alert-danger {
+  background-color: var(--danger-soft);
+  border-color: rgba(225, 29, 72, 0.25);
+  color: #9f1141;
+}
+.alert-warning {
+  background-color: var(--warning-soft);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #8a5a09;
+}
+.alert-success {
+  background-color: var(--success-soft);
+  border-color: rgba(16, 185, 129, 0.25);
+  color: #0a7a56;
+}
+.alert-info {
+  background-color: var(--info-soft);
+  border-color: rgba(14, 165, 233, 0.25);
+  color: #0a6390;
+}
+
+/* ---- Cards, modals, dropdowns ---- */
+.card {
+  border-color: var(--border);
+}
+.modal-content {
+  border-radius: var(--radius-card);
+  border: none;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---- Utilities ---- */
+.border-dashed {
+  border: 2px dashed var(--border-strong);
+  background-color: var(--surface-alt);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
+
+/*
+ * RouteOps is a field tool primarily used outdoors / in daylight, so the
+ * design system is intentionally pinned to the light theme above rather than
+ * following the OS dark-mode preference. `color-scheme: light` (set at the
+ * top of :root) tells the browser not to auto-darken form controls/scrollbars.
+ */

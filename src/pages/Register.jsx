@@ -1,7 +1,11 @@
 import { useState } from 'react';
-import { Form, Button, Card, Container, Alert } from 'react-bootstrap';
+import { Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { FaRoute } from 'react-icons/fa';
 import { useAuth } from '../context/AuthContext';
+import AuthPanel from '../components/AuthPanel';
+import './Auth.css';
 
 const Register = () => {
     const [email, setEmail] = useState('');
@@ -34,51 +38,65 @@ const Register = () => {
     };
 
     return (
-        <Container className="d-flex align-items-center justify-content-center" style={{ minHeight: '80vh' }}>
-            <div className="w-100" style={{ maxWidth: '400px' }}>
-                <Card>
-                    <Card.Body>
-                        <h2 className="text-center mb-4">Register</h2>
-                        {error && <Alert variant="danger">{error}</Alert>}
-                        <Form onSubmit={handleSubmit}>
-                            <Form.Group id="email" className="mb-3">
-                                <Form.Label>Email Address</Form.Label>
-                                <Form.Control
-                                    type="email"
-                                    required
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                />
-                            </Form.Group>
-                            <Form.Group id="password" id="password_group" className="mb-3">
-                                <Form.Label>Password</Form.Label>
-                                <Form.Control
-                                    type="password"
-                                    required
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                />
-                            </Form.Group>
-                            <Form.Group id="password-confirm" className="mb-3">
-                                <Form.Label>Confirm Password</Form.Label>
-                                <Form.Control
-                                    type="password"
-                                    required
-                                    value={passwordConfirm}
-                                    onChange={(e) => setPasswordConfirm(e.target.value)}
-                                />
-                            </Form.Group>
-                            <Button disabled={loading} className="w-100 mt-2" type="submit">
-                                {loading ? 'Registering...' : 'Register'}
-                            </Button>
-                        </Form>
-                    </Card.Body>
-                </Card>
-                <div className="w-100 text-center mt-2">
-                    Already have an account? <Link to="/login">Log In</Link>
-                </div>
+        <div className="auth-shell">
+            <AuthPanel
+                tagline="Get started"
+                headline="Create an account to start optimizing trips."
+            />
+            <div className="auth-form-side">
+                <motion.div
+                    className="auth-form-card"
+                    initial={{ opacity: 0, y: 18 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                >
+                    <div className="auth-mobile-brand d-lg-none">
+                        <span className="brand-mark"><FaRoute /></span> RouteOps
+                    </div>
+                    <h2 className="auth-title">Register</h2>
+                    <p className="auth-subtitle">Set up your field operations account.</p>
+
+                    {error && <Alert variant="danger">{error}</Alert>}
+
+                    <Form onSubmit={handleSubmit}>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Email Address</Form.Label>
+                            <Form.Control
+                                type="email"
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                            />
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Password</Form.Label>
+                            <Form.Control
+                                type="password"
+                                required
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                            />
+                        </Form.Group>
+                        <Form.Group className="mb-4">
+                            <Form.Label>Confirm Password</Form.Label>
+                            <Form.Control
+                                type="password"
+                                required
+                                value={passwordConfirm}
+                                onChange={(e) => setPasswordConfirm(e.target.value)}
+                            />
+                        </Form.Group>
+                        <Button disabled={loading} className="w-100" type="submit" size="lg">
+                            {loading ? <Spinner size="sm" animation="border" className="me-2" /> : null}
+                            {loading ? 'Registering...' : 'Register'}
+                        </Button>
+                    </Form>
+                    <div className="auth-switch">
+                        Already have an account? <Link to="/login">Log In</Link>
+                    </div>
+                </motion.div>
             </div>
-        </Container>
+        </div>
     );
 };
 

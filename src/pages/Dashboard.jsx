@@ -1,12 +1,23 @@
 import { useState, useEffect } from 'react';
-import { Container, Button, Row, Col, Card, Spinner, ListGroup, Badge } from 'react-bootstrap';
+import { Container, Button, Row, Col, Card, Badge } from 'react-bootstrap';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { FaPlus, FaRoute, FaCalendarAlt, FaChevronRight, FaTrash, FaMapMarkedAlt } from 'react-icons/fa';
+import { FaPlus, FaRoute, FaCalendarAlt, FaTrash, FaMapMarkedAlt } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import useTripStore from '../store/useTripStore';
 import dayjs from 'dayjs';
 import { toast } from 'react-toastify';
+
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { staggerChildren: 0.08 } }
+};
+
+const cardVariants = {
+    hidden: { opacity: 0, y: 18 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } }
+};
 
 const Dashboard = () => {
     const { user } = useAuth();
@@ -39,7 +50,6 @@ const Dashboard = () => {
 
     const handleResumeTrip = async (trip) => {
         try {
-            // Fetch sites for this trip
             const { data: sitesData, error } = await supabase
                 .from('sites')
                 .select('*')
@@ -48,10 +58,9 @@ const Dashboard = () => {
 
             if (error) throw error;
 
-            // Map database fields to store fields if necessary
             const mappedSites = sitesData.map(s => ({
                 ...s,
-                isValid: true // Database sites are assumed valid
+                isValid: true
             }));
 
             setCurrentTrip(trip);
@@ -90,14 +99,14 @@ const Dashboard = () => {
     };
 
     return (
-        <Container className="py-4">
+        <Container className="page-shell">
             <Row className="mb-4 align-items-center">
                 <Col>
-                    <h1 className="fw-bold text-dark">Field Dashboard</h1>
-                    <p className="text-muted">Manage and track your verification trips.</p>
+                    <h1 className="fw-bold" style={{ color: 'var(--ink)' }}>Field Dashboard</h1>
+                    <p className="text-muted mb-0">Manage and track your verification trips.</p>
                 </Col>
                 <Col xs="auto">
-                    <Button variant="primary" className="rounded-pill px-4 shadow-sm" onClick={startNewTrip}>
+                    <Button variant="primary" className="px-4" onClick={startNewTrip}>
                         <FaPlus className="me-2" />
                         <span className="d-none d-md-inline">New Trip</span>
                         <span className="d-md-none">New</span>
@@ -106,82 +115,82 @@ const Dashboard = () => {
             </Row>
 
             <div className="d-flex justify-content-between align-items-center mb-3">
-                <h4 className="mb-0 fw-bold">Recent Trips</h4>
-                <Badge bg="light" text="dark" className="border">{trips.length} Total</Badge>
+                <h5 className="mb-0 fw-bold" style={{ color: 'var(--ink)' }}>Recent Trips</h5>
+                <Badge className="status-badge is-neutral">{trips.length} total</Badge>
             </div>
-            
+
             {loading ? (
-                <div className="text-center py-5">
-                    <Spinner animation="border" variant="primary" />
-                </div>
-            ) : trips.length > 0 ? (
                 <Row className="g-4">
-                    {trips.map(trip => (
-                        <Col md={6} lg={4} key={trip.id}>
-                            <Card 
-                                className="h-100 shadow-sm hover-shadow border-0" 
-                                style={{ borderRadius: '15px' }}
-                            >
-                                <Card.Body className="p-4 d-flex flex-column">
-                                    <div className="d-flex justify-content-between align-items-start mb-3">
-                                        <div className="bg-primary bg-opacity-10 p-3 rounded-circle me-3">
-                                            <FaRoute className="text-primary" size={20} />
-                                        </div>
-                                        <Button 
-                                            variant="link" 
-                                            className="text-danger p-0 opacity-50 hover-opacity-100"
-                                            onClick={(e) => handleDeleteTrip(e, trip.id)}
-                                        >
-                                            <FaTrash size={14} />
-                                        </Button>
-                                    </div>
-                                    <h5 className="fw-bold mb-1 text-truncate">{trip.title}</h5>
-                                    <Card.Text className="text-muted small mb-4">
-                                        <FaCalendarAlt className="me-1 opacity-50" />
-                                        {dayjs(trip.created_at).format('DD MMM YYYY')}
-                                    </Card.Text>
-                                    
-                                    <div className="mt-auto">
-                                        <div className="d-grid gap-2">
-                                            <Button 
-                                                variant="outline-primary" 
-                                                size="sm" 
-                                                className="rounded-pill"
-                                                onClick={() => handleViewReview(trip.id)}
-                                            >
-                                                View Trip Info
-                                            </Button>
-                                            <Button 
-                                                variant="primary" 
-                                                size="sm" 
-                                                className="rounded-pill"
-                                                onClick={() => handleResumeTrip(trip)}
-                                            >
-                                                <FaMapMarkedAlt className="me-2" />
-                                                Resume Map
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </Card.Body>
-                            </Card>
+                    {[1, 2, 3].map((i) => (
+                        <Col md={6} lg={4} key={i}>
+                            <div className="skeleton" style={{ height: '230px' }} />
                         </Col>
                     ))}
                 </Row>
+            ) : trips.length > 0 ? (
+                <motion.div variants={containerVariants} initial="hidden" animate="visible">
+                    <Row className="g-4">
+                        {trips.map(trip => (
+                            <Col md={6} lg={4} key={trip.id}>
+                                <motion.div variants={cardVariants} className="h-100">
+                                    <Card className="h-100 hover-shadow" style={{ boxShadow: 'none' }}>
+                                        <Card.Body className="p-4 d-flex flex-column">
+                                            <div className="d-flex justify-content-between align-items-start mb-3">
+                                                <span className="icon-chip is-lg">
+                                                    <FaRoute />
+                                                </span>
+                                                <Button
+                                                    variant="link"
+                                                    className="text-danger p-0"
+                                                    onClick={(e) => handleDeleteTrip(e, trip.id)}
+                                                    title="Delete trip"
+                                                >
+                                                    <FaTrash size={14} />
+                                                </Button>
+                                            </div>
+                                            <h5 className="fw-bold mb-1 text-truncate" style={{ color: 'var(--ink)' }}>{trip.title}</h5>
+                                            <Card.Text className="text-muted small mb-4">
+                                                <FaCalendarAlt className="me-1" />
+                                                {dayjs(trip.created_at).format('DD MMM YYYY')}
+                                            </Card.Text>
+
+                                            <div className="mt-auto d-grid gap-2">
+                                                <Button
+                                                    variant="outline-primary"
+                                                    size="sm"
+                                                    onClick={() => handleViewReview(trip.id)}
+                                                >
+                                                    View Trip Info
+                                                </Button>
+                                                <Button
+                                                    variant="primary"
+                                                    size="sm"
+                                                    onClick={() => handleResumeTrip(trip)}
+                                                >
+                                                    <FaMapMarkedAlt className="me-2" />
+                                                    Resume Map
+                                                </Button>
+                                            </div>
+                                        </Card.Body>
+                                    </Card>
+                                </motion.div>
+                            </Col>
+                        ))}
+                    </Row>
+                </motion.div>
             ) : (
-                <Card className="text-center p-5 border-dashed bg-light">
-                    <Card.Body>
-                        <div className="mb-3">
-                            <FaRoute size={48} className="text-muted opacity-25" />
-                        </div>
-                        <h4 className="fw-bold">No trips found</h4>
-                        <p className="text-muted mx-auto" style={{ maxWidth: '300px' }}>
-                            Ready to start? Create your first trip to begin optimizing field routes.
-                        </p>
-                        <Button variant="primary" className="rounded-pill px-4 mt-2" onClick={startNewTrip}>
-                            Get Started
-                        </Button>
-                    </Card.Body>
-                </Card>
+                <div className="empty-state">
+                    <span className="icon-chip is-lg">
+                        <FaRoute />
+                    </span>
+                    <h4 className="fw-bold mt-3" style={{ color: 'var(--ink)' }}>No trips yet</h4>
+                    <p className="mx-auto mb-3" style={{ maxWidth: '320px' }}>
+                        Create your first trip to start optimizing field routes and collecting site evidence.
+                    </p>
+                    <Button variant="primary" className="px-4" onClick={startNewTrip}>
+                        Create Your First Trip
+                    </Button>
+                </div>
             )}
         </Container>
     );

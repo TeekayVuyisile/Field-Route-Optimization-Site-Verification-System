@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Container, Row, Col, Card, Button, ListGroup, Spinner, Badge, Form } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button, ListGroup, Spinner, Form } from 'react-bootstrap';
 import { MapContainer, TileLayer, Marker, Popup, useMap, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { AnimatePresence, motion } from 'framer-motion';
 import useTripStore from '../store/useTripStore';
 import { useNavigate } from 'react-router-dom';
 import { 
@@ -428,42 +429,51 @@ const MapView = () => {
     return (
         <Container fluid className="px-2 px-md-4 position-relative">
             {/* Turn-by-Turn Navigation Banner */}
-            {navigationSteps.length > 0 && navigationSteps[currentStepIndex] && (
-                <div className="nav-banner bg-dark text-white p-3 rounded shadow-lg d-flex align-items-center mb-3">
-                    <div className="me-3">
-                        <FaLocationArrow size={32} className="text-primary" />
-                    </div>
-                    <div className="flex-grow-1">
-                        <div className="fw-bold fs-5">{navigationSteps[currentStepIndex].instruction}</div>
-                        <small className="text-light opacity-75">
-                            {navigationSteps[currentStepIndex].distance > 1000 
-                                ? `${(navigationSteps[currentStepIndex].distance / 1000).toFixed(1)} km` 
-                                : `${navigationSteps[currentStepIndex].distance.toFixed(0)} m`} remaining in this step
-                        </small>
-                    </div>
-                    <div className="d-flex flex-column gap-1">
-                        <Button 
-                            variant="primary" 
-                            size="sm"
-                            onClick={() => setCurrentStepIndex(prev => Math.min(prev + 1, navigationSteps.length - 1))}
-                        >
-                            Next
-                        </Button>
-                        <Button 
-                            variant="outline-light" 
-                            size="sm"
-                            onClick={() => setCurrentStepIndex(prev => Math.max(0, prev - 1))}
-                        >
-                            Back
-                        </Button>
-                    </div>
-                </div>
-            )}
+            <AnimatePresence>
+                {navigationSteps.length > 0 && navigationSteps[currentStepIndex] && (
+                    <motion.div
+                        key="nav-banner"
+                        initial={{ opacity: 0, y: -16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -16 }}
+                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                        className="nav-banner p-3 d-flex align-items-center mb-3"
+                    >
+                        <div className="me-3">
+                            <FaLocationArrow size={32} />
+                        </div>
+                        <div className="flex-grow-1">
+                            <div className="fw-bold fs-5">{navigationSteps[currentStepIndex].instruction}</div>
+                            <small className="opacity-75">
+                                {navigationSteps[currentStepIndex].distance > 1000
+                                    ? `${(navigationSteps[currentStepIndex].distance / 1000).toFixed(1)} km`
+                                    : `${navigationSteps[currentStepIndex].distance.toFixed(0)} m`} remaining in this step
+                            </small>
+                        </div>
+                        <div className="d-flex flex-column gap-1">
+                            <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => setCurrentStepIndex(prev => Math.min(prev + 1, navigationSteps.length - 1))}
+                            >
+                                Next
+                            </Button>
+                            <Button
+                                variant="outline-light"
+                                size="sm"
+                                onClick={() => setCurrentStepIndex(prev => Math.max(0, prev - 1))}
+                            >
+                                Back
+                            </Button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            <Row className="mb-3 align-items-center">
+            <Row className="map-toolbar mb-3 align-items-center">
                 <Col>
                     <div className="d-flex align-items-center">
-                        <h3 className="mb-0 text-truncate me-2" style={{ maxWidth: '200px' }}>{currentTrip.title}</h3>
+                        <h3 className="mb-0 text-truncate me-2 fw-bold" style={{ maxWidth: '200px', color: 'var(--ink)' }}>{currentTrip.title}</h3>
                         <Button variant="outline-primary" size="sm" className="rounded-circle" onClick={() => { setEditSiteData(null); setShowModal(true); }}>
                             <FaPlus />
                         </Button>
@@ -555,18 +565,18 @@ const MapView = () => {
 
                 {showSidebar && (
                     <Col md={4} lg={3}>
-                        <Card className="site-sidebar shadow-sm border-0 ms-md-3">
+                        <Card className="site-sidebar border-0 ms-md-3" style={{ boxShadow: 'var(--shadow-sm)' }}>
                             <Card.Header className="bg-white py-3 d-flex justify-content-between">
-                                <h5 className="mb-0">Route</h5>
-                                <Badge bg="primary">{sites.filter(s => s.is_checked).length}/{sites.length}</Badge>
+                                <h5 className="mb-0 fw-bold" style={{ color: 'var(--ink)' }}>Route</h5>
+                                <span className="status-badge is-accent">{sites.filter(s => s.is_checked).length}/{sites.length}</span>
                             </Card.Header>
                             <ListGroup variant="flush" className="overflow-auto" style={{ height: 'calc(100vh - 250px)' }}>
                                 {sites.map((site, index) => (
-                                    <ListGroup.Item key={site.id} className={site.id === nextSite?.id ? 'bg-light' : ''}>
+                                    <ListGroup.Item key={site.id} className={site.id === nextSite?.id ? 'is-next-stop' : ''}>
                                         <div className="d-flex justify-content-between align-items-center">
-                                            <div className="text-truncate">
-                                                <Badge bg="secondary" className="me-1">{index + 1}</Badge>
-                                                <span className={site.is_checked ? 'text-muted text-decoration-line-through' : 'fw-bold'}>{site.name}</span>
+                                            <div className="text-truncate d-flex align-items-center">
+                                                <span className={`site-order-dot ${site.is_checked ? 'is-checked' : site.id === nextSite?.id ? 'is-next' : ''}`}>{index + 1}</span>
+                                                <span className={site.is_checked ? 'text-muted text-decoration-line-through' : 'fw-bold'} style={{ color: site.is_checked ? undefined : 'var(--ink)' }}>{site.name}</span>
                                             </div>
                                             <div className="d-flex">
                                                 <Button variant="link" size="sm" className="p-0 me-2" onClick={() => { setEditSiteData(site); setShowModal(true); }}>

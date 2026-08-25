@@ -1,15 +1,15 @@
 import { useState, useMemo } from 'react';
-import { Container, Button, Table, Card, Row, Col, Form, Badge } from 'react-bootstrap';
-import { 
-    flexRender, 
-    getCoreRowModel, 
-    useReactTable, 
+import { Container, Button, Table, Card, Row, Col, Form } from 'react-bootstrap';
+import {
+    flexRender,
+    getCoreRowModel,
+    useReactTable,
     getSortedRowModel,
     getFilteredRowModel
 } from '@tanstack/react-table';
 import useTripStore from '../store/useTripStore';
 import { useNavigate } from 'react-router-dom';
-import { FaTrash, FaExchangeAlt, FaMapMarkedAlt, FaPlus, FaSave } from 'react-icons/fa';
+import { FaTrash, FaExchangeAlt, FaPlus, FaSave, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import ManualSiteModal from '../components/ManualSiteModal';
 import { validateCoordinates } from '../utils/validation';
 import { supabase } from '../lib/supabase';
@@ -24,6 +24,20 @@ const TripDetails = () => {
     const [sorting, setSorting] = useState([]);
     const [globalFilter, setGlobalFilter] = useState('');
     const [isSaving, setIsSaving] = useState(false);
+
+    const handleSwap = (index) => {
+        const site = sites[index];
+        const newLat = site.longitude;
+        const newLng = site.latitude;
+        const validation = validateCoordinates(newLat, newLng);
+        updateSite(index, {
+            latitude: newLat,
+            longitude: newLng,
+            isValid: validation.isValid,
+            error: validation.error,
+            isInverted: validation.isInverted
+        });
+    };
 
     const columns = useMemo(() => [
         {
@@ -44,9 +58,9 @@ const TripDetails = () => {
             header: 'Status',
             cell: ({ row }) => {
                 const isValid = row.original.isValid;
-                return isValid ? 
-                    <Badge bg="success">Valid</Badge> : 
-                    <Badge bg="warning" text="dark">Warning</Badge>;
+                return isValid ?
+                    <span className="status-badge is-success">Valid</span> :
+                    <span className="status-badge is-warning">Warning</span>;
             }
         },
         {
@@ -54,17 +68,17 @@ const TripDetails = () => {
             header: 'Actions',
             cell: ({ row }) => (
                 <div className="d-flex">
-                    <Button 
-                        variant="outline-secondary" 
-                        size="sm" 
+                    <Button
+                        variant="outline-secondary"
+                        size="sm"
                         className="me-2"
                         onClick={() => handleSwap(row.index)}
                         title="Swap Coordinates"
                     >
                         <FaExchangeAlt />
                     </Button>
-                    <Button 
-                        variant="outline-danger" 
+                    <Button
+                        variant="outline-danger"
                         size="sm"
                         onClick={() => removeSite(row.index)}
                     >
@@ -89,31 +103,16 @@ const TripDetails = () => {
         getFilteredRowModel: getFilteredRowModel(),
     });
 
-    const handleSwap = (index) => {
-        const site = sites[index];
-        const newLat = site.longitude;
-        const newLng = site.latitude;
-        const validation = validateCoordinates(newLat, newLng);
-        updateSite(index, {
-            latitude: newLat,
-            longitude: newLng,
-            isValid: validation.isValid,
-            error: validation.error,
-            isInverted: validation.isInverted
-        });
-    };
-
     const handleAddManualSite = (newSite) => {
         setSites([...sites, newSite]);
     };
 
     const handleSaveTrip = async () => {
         if (!currentTrip || sites.length === 0) return;
-        
+
         try {
             setIsSaving(true);
-            
-            // 1. Create the trip in Supabase
+
             const { data: tripData, error: tripError } = await supabase
                 .from('trips')
                 .insert([{
@@ -125,7 +124,6 @@ const TripDetails = () => {
 
             if (tripError) throw tripError;
 
-            // 2. Insert sites
             const sitesToInsert = sites.map((site, index) => ({
                 trip_id: tripData.id,
                 name: site.name,
@@ -160,28 +158,28 @@ const TripDetails = () => {
     }
 
     return (
-        <Container className="mb-5">
+        <Container className="page-shell">
             <Row className="mb-4 align-items-center">
                 <Col>
-                    <h1>{currentTrip.title}</h1>
-                    <p className="text-muted">{sites.length} total sites</p>
+                    <h1 className="fw-bold mb-1" style={{ color: 'var(--ink)' }}>{currentTrip.title}</h1>
+                    <p className="text-muted mb-0">{sites.length} total sites</p>
                 </Col>
-                <Col xs="auto">
-                    <Button variant="outline-primary" className="me-2" onClick={() => setShowManualModal(true)}>
+                <Col xs="auto" className="d-flex gap-2">
+                    <Button variant="outline-primary" onClick={() => setShowManualModal(true)}>
                         <FaPlus className="me-2" />
                         Add Site
                     </Button>
-                    <Button variant="success" onClick={handleSaveTrip} disabled={isSaving}>
+                    <Button variant="primary" onClick={handleSaveTrip} disabled={isSaving}>
                         <FaSave className="me-2" />
                         {isSaving ? 'Saving...' : 'Save & Start Map'}
                     </Button>
                 </Col>
             </Row>
 
-            <Card className="mb-4">
+            <Card className="border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
                 <Card.Body>
                     <Form.Group className="mb-3">
-                        <Form.Control 
+                        <Form.Control
                             type="text"
                             placeholder="Search sites..."
                             value={globalFilter ?? ''}
@@ -189,17 +187,19 @@ const TripDetails = () => {
                         />
                     </Form.Group>
 
-                    <Table responsive hover>
+                    <Table responsive hover className="trip-table align-middle">
                         <thead>
                             {table.getHeaderGroups().map(headerGroup => (
                                 <tr key={headerGroup.id}>
                                     {headerGroup.headers.map(header => (
-                                        <th key={header.id} onClick={header.column.getToggleSortingHandler()} style={{ cursor: 'pointer' }}>
-                                            {flexRender(header.column.columnDef.header, header.getContext())}
-                                            {{
-                                                asc: ' 🔼',
-                                                desc: ' 🔽',
-                                            }[header.column.getIsSorted()] ?? null}
+                                        <th key={header.id} onClick={header.column.getToggleSortingHandler()}>
+                                            <span className="d-inline-flex align-items-center gap-1">
+                                                {flexRender(header.column.columnDef.header, header.getContext())}
+                                                {{
+                                                    asc: <FaChevronUp size={10} />,
+                                                    desc: <FaChevronDown size={10} />,
+                                                }[header.column.getIsSorted()] ?? null}
+                                            </span>
                                         </th>
                                     ))}
                                 </tr>
@@ -220,10 +220,10 @@ const TripDetails = () => {
                 </Card.Body>
             </Card>
 
-            <ManualSiteModal 
-                show={showManualModal} 
-                onHide={() => setShowManualModal(false)} 
-                onAdd={handleAddManualSite} 
+            <ManualSiteModal
+                show={showManualModal}
+                onHide={() => setShowManualModal(false)}
+                onAdd={handleAddManualSite}
             />
         </Container>
     );

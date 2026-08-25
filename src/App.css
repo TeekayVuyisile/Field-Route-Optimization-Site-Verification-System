@@ -1,93 +1,269 @@
-/* Global Mobile Improvements */
-:root {
-    --primary-blue: #0d6efd;
-    --success-green: #198754;
-    --warning-gold: #ffc107;
+/* ============================================================
+   Shared layout & component primitives built on the design
+   tokens defined in index.css.
+   ============================================================ */
+
+.page-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
 }
 
-body {
-    background-color: #f4f7f6;
-}
-
-/* Dashboard Cards */
+/* ---- Elevation utility (cards, list rows) ---- */
 .hover-shadow {
-    transition: all 0.3s ease;
-    border: none;
-    border-radius: 12px;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface-card);
 }
-
 .hover-shadow:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md) !important;
+  border-color: var(--border-strong);
 }
 
-/* Map Container Responsiveness */
+/* ---- Status badges (verified / pending / error) ---- */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.status-badge.is-success {
+  background: var(--success-soft);
+  color: #0a7a56;
+}
+.status-badge.is-warning {
+  background: var(--warning-soft);
+  color: #8a5a09;
+}
+.status-badge.is-danger {
+  background: var(--danger-soft);
+  color: #9f1141;
+}
+.status-badge.is-neutral {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+.status-badge.is-accent {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+/* ---- Stat tiles (report / dashboard summaries) ---- */
+.stat-tile {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 1.1rem 1.3rem;
+}
+.stat-tile .stat-value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.stat-tile .stat-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 0.3rem;
+}
+
+/* ---- Icon chips ---- */
+.icon-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-input);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+.icon-chip.is-lg {
+  width: 60px;
+  height: 60px;
+  font-size: 1.5rem;
+  border-radius: 16px;
+}
+
+/* ---- Empty states ---- */
+.empty-state {
+  text-align: center;
+  padding: 3.5rem 1.5rem;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+}
+.empty-state .icon-chip {
+  margin: 0 auto 1rem;
+}
+
+/* ---- Skeleton loading ---- */
+.skeleton {
+  border-radius: var(--radius-card);
+  background: linear-gradient(90deg, var(--surface-alt) 25%, var(--border) 37%, var(--surface-alt) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* ---- Map container ---- */
 .map-container {
-    height: 60vh; /* Default for mobile */
-    width: 100%;
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  height: 60vh;
+  width: 100%;
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--border);
 }
-
 @media (min-width: 768px) {
-    .map-container {
-        height: calc(100vh - 120px);
-    }
+  .map-container {
+    height: calc(100vh - 120px);
+  }
 }
 
-/* Floating Action Buttons for Mobile Map */
 .mobile-map-controls {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 1000;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-/* Sidebar as a drawer on mobile */
 .site-sidebar {
-    height: 40vh;
-    margin-top: 15px;
+  height: 40vh;
+  margin-top: 15px;
+  border-radius: var(--radius-card);
 }
-
 @media (min-width: 768px) {
-    .site-sidebar {
-        height: calc(100vh - 120px);
-        margin-top: 0;
-    }
+  .site-sidebar {
+    height: calc(100vh - 120px);
+    margin-top: 0;
+  }
 }
 
-/* Custom Marker Popup Styling */
 .leaflet-popup-content-wrapper {
-    border-radius: 12px;
-    padding: 5px;
+  border-radius: var(--radius-card);
+  padding: 5px;
+  box-shadow: var(--shadow-lg);
 }
-
 .leaflet-popup-content h6 {
-    margin-bottom: 10px;
+  margin-bottom: 10px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* ---- CreateTrip stepper ---- */
+.create-trip-stepper {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.stepper-node {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1;
+}
+.stepper-node:not(:last-child)::after {
+    content: '';
+    flex: 1;
+    height: 2px;
+    background: var(--border-strong);
+    margin-left: 0.6rem;
+}
+.stepper-dot {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--surface-alt);
+    color: var(--text-muted);
     font-weight: 700;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    border: 2px solid var(--border);
+}
+.stepper-node.is-active .stepper-dot {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.stepper-node.is-done .stepper-dot {
+    background: var(--success);
+    border-color: var(--success);
+    color: #fff;
+}
+.stepper-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.stepper-node.is-active .stepper-label {
+    color: var(--ink);
+}
+@media (max-width: 575.98px) {
+    .stepper-label { display: none; }
 }
 
-/* UI Elements */
-.border-dashed {
-    border: 2px dashed #cbd5e0;
-    background-color: #f8fafc;
-    border-radius: 16px;
+/* ---- Choice cards (CreateTrip step 2) ---- */
+.choice-card {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.choice-card:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-md);
 }
 
-.btn {
-    border-radius: 8px;
-    padding: 10px 20px;
-    font-weight: 500;
+/* ---- Reskinned data tables (TripDetails, TripReview) ---- */
+.trip-table thead th {
+    background: var(--surface-alt);
+    color: var(--ink-soft);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    border-bottom: none;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+.trip-table thead th:first-child { border-top-left-radius: var(--radius-input); }
+.trip-table thead th:last-child { border-top-right-radius: var(--radius-input); }
+.trip-table tbody tr:hover {
+    background-color: var(--accent-soft);
+}
+.trip-table td, .trip-table th {
+    padding: 0.85rem 1rem;
+    vertical-align: middle;
 }
 
-.navbar {
-    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-}
-
-/* Utility Classes */
 .rounded-xl { border-radius: 16px; }
-.bg-glass { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); }
+.bg-glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}

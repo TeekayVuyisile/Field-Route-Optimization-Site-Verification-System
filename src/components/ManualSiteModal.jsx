@@ -49,12 +49,14 @@ const ManualSiteModal = ({ show, onHide, onAdd, onSave, editData }) => {
 
     return (
         <Modal show={show} onHide={onHide} centered>
-            <Modal.Header closeButton>
-                <Modal.Title>{editData ? 'Edit Site' : 'Add Site Manually'}</Modal.Title>
+            <Modal.Header closeButton className="border-0 pb-0">
+                <Modal.Title className="fw-bold" style={{ color: 'var(--ink)' }}>
+                    {editData ? 'Edit Site' : 'Add Site Manually'}
+                </Modal.Title>
             </Modal.Header>
             <Form onSubmit={handleSubmit(onSubmit)}>
-                <Modal.Body>
-                    {validationError && <div className="alert alert-danger">{validationError}</div>}
+                <Modal.Body className="pt-2">
+                    {validationError && <div className="alert alert-danger py-2">{validationError}</div>}
                     <Form.Group className="mb-3">
                         <Form.Label>Site Name</Form.Label>
                         <Form.Control 
@@ -90,8 +92,8 @@ const ManualSiteModal = ({ show, onHide, onAdd, onSave, editData }) => {
                         </Col>
                     </Row>
                 </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="secondary" onClick={onHide}>Cancel</Button>
+                <Modal.Footer className="border-0 pt-0">
+                    <Button variant="outline-secondary" onClick={onHide}>Cancel</Button>
                     <Button variant="primary" type="submit">
                         {editData ? 'Update Site' : 'Add Site'}
                     </Button>
