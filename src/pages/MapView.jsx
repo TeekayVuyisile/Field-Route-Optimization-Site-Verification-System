@@ -20,41 +20,37 @@ import ManualSiteModal from '../components/ManualSiteModal';
 import debounce from 'lodash/debounce';
 import './MapView.css';
 
-// Custom Icons
-const greenIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
-});
+// Custom on-brand pin markers (CSS shapes, no external image requests).
+// Status keeps the same red/gold/green convention field users already know;
+// only the chrome changes. Each site pin also carries its visiting-order
+// number so it reads the same as the "Route" sidebar list.
+const pinIconCache = new Map();
 
-const redIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
-});
+const getSitePinIcon = (status, label) => {
+    const key = `${status}-${label}`;
+    if (pinIconCache.has(key)) return pinIconCache.get(key);
 
-const blueIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
-});
+    const icon = L.divIcon({
+        html: `
+            <div class="map-pin is-${status}">
+                <span class="map-pin-label">${label}</span>
+            </div>
+        `,
+        className: 'map-pin-wrap',
+        iconSize: [30, 40],
+        iconAnchor: [15, 38],
+        popupAnchor: [0, -36]
+    });
 
-const yellowIcon = new L.Icon({
-    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+    pinIconCache.set(key, icon);
+    return icon;
+};
+
+const userLocationIcon = L.divIcon({
+    html: '<div class="user-dot"><span class="user-dot-pulse"></span></div>',
+    className: 'user-dot-wrap',
+    iconSize: [22, 22],
+    iconAnchor: [11, 11]
 });
 
 const RecenterAutomatically = ({ lat, lng }) => {
@@ -86,6 +82,7 @@ const MapView = () => {
     const nextSiteRef = useRef(null);
     const lastRerouteTime = useRef(0);
     const lastHeadsUpIdx = useRef(-1);
+    const lastArrivedIdx = useRef(-1);
     const routeDataRef = useRef(null);
     const currentStepIndexRef = useRef(0);
     const navigationStepsRef = useRef([]);
@@ -96,7 +93,20 @@ const MapView = () => {
     useEffect(() => { voiceEnabledRef.current = voiceEnabled; }, [voiceEnabled]);
     useEffect(() => { lastAnnouncedIdRef.current = lastAnnouncedId; }, [lastAnnouncedId]);
     useEffect(() => { nextSiteRef.current = nextSite; }, [nextSite]);
-    useEffect(() => { routeDataRef.current = routeData; lastHeadsUpIdx.current = -1; }, [routeData]);
+    useEffect(() => {
+        routeDataRef.current = routeData;
+        lastHeadsUpIdx.current = -1;
+        lastArrivedIdx.current = -1;
+    }, [routeData]);
+
+    // Stop any in-progress announcement the instant voice is muted, instead of
+    // only silencing future ones (a still-playing line kept talking through
+    // a mute tap otherwise).
+    useEffect(() => {
+        if (!voiceEnabled && 'speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+    }, [voiceEnabled]);
 
     // Site Modal States
     const [showModal, setShowModal] = useState(false);
@@ -147,6 +157,16 @@ const MapView = () => {
             },
             { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
         );
+    }, []);
+
+    // Get an initial position as soon as the map loads, instead of waiting for
+    // the user to notice the Optimize button is disabled and go find the
+    // "Refresh GPS" button themselves. This uses the same fallback path as a
+    // manual refresh (no accuracy filter), so it works even on laptops/devices
+    // without a dedicated GPS chip.
+    useEffect(() => {
+        refreshGPS();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // STABLE OPTIMIZATION FUNCTION (No state dependencies to prevent loop)
@@ -207,7 +227,11 @@ const MapView = () => {
             if (!isAutoReroute) toast.success("Route Optimized!");
         } catch (error) {
             console.error("Optimization error:", error);
-            if (!isAutoReroute) toast.error("Failed to optimize route.");
+            if (!isAutoReroute) {
+                toast.error("Failed to optimize route.");
+            } else {
+                toast.error("Auto-reroute failed. Tap Optimize to try again.");
+            }
         } finally {
             setIsOptimizing(false);
         }
@@ -217,24 +241,32 @@ const MapView = () => {
     useEffect(() => {
         if (!navigator.geolocation) return;
 
-        let lastPos = null;
-
         const id = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude, accuracy } = pos.coords;
                 const p = { lat: latitude, lng: longitude };
 
                 // 1. ACCURACY FILTER
-                if (accuracy > 100) return;
+                // Real GPS chips (phones in a vehicle) easily beat 100m, but
+                // WiFi/IP-based positioning (laptops, indoors, no GPS chip)
+                // commonly reports 150-300m and would otherwise never pass
+                // this filter, silently freezing userPos forever with no
+                // feedback to the user (the actual bug reported: "Optimize"
+                // stuck disabled). 300m is still far tighter than the 500m
+                // teleportation check below.
+                if (accuracy > 300) return;
 
                 // 2. TELEPORTATION FILTER
+                // Compare against userPosRef (not a private closure variable) so a
+                // manual "Refresh GPS" tap actually resets this filter's baseline
+                // instead of leaving it locked onto a stale position forever.
+                const lastPos = userPosRef.current;
                 if (lastPos) {
                     const jumpDist = calculateDistance(lastPos.lat, lastPos.lng, p.lat, p.lng);
                     if (jumpDist > 500) return;
-                    if (jumpDist < 5) return; 
+                    if (jumpDist < 5) return;
                 }
-                
-                lastPos = p;
+
                 setUserPos(p);
 
                 // Use REFS for logic to avoid effect restarts
@@ -254,11 +286,13 @@ const MapView = () => {
                 }
 
                 // 2. Proximity Alert
+                let spokeThisTick = false;
                 if (activeNextSite && isVoiceOn && activeNextSite.id !== lastAnnounced) {
                     const dist = calculateDistance(latitude, longitude, activeNextSite.latitude, activeNextSite.longitude);
                     if (dist < 100) {
                         speak(`Approaching destination: ${activeNextSite.name}`);
                         setLastAnnouncedId(activeNextSite.id);
+                        spokeThisTick = true;
                     }
                 }
 
@@ -269,14 +303,20 @@ const MapView = () => {
                     const maneuverPointIdx = nextStep.way_points[0];
                     const maneuverPoint = { lng: coords[maneuverPointIdx][0], lat: coords[maneuverPointIdx][1] };
                     const distToTurn = calculateDistance(latitude, longitude, maneuverPoint.lat, maneuverPoint.lng);
-                    
+
                     if (distToTurn < 150 && distToTurn > 40 && lastHeadsUpIdx.current !== stepIdx + 1) {
-                        if (isVoiceOn) speak(`In 150 meters, ${nextStep.instruction}`);
+                        if (isVoiceOn && !spokeThisTick) speak(`In 150 meters, ${nextStep.instruction}`);
                         lastHeadsUpIdx.current = stepIdx + 1;
                     }
-                    if (distToTurn < 30) {
+                    // Guarded the same way as the heads-up alert above: without
+                    // this check, every GPS tick while still within 30m kept
+                    // re-advancing the step index AND re-speaking the same
+                    // instruction 2-4+ times in a row (the reported "voice
+                    // guidance doesn't work properly" bug).
+                    if (distToTurn < 30 && lastArrivedIdx.current !== stepIdx + 1) {
+                        lastArrivedIdx.current = stepIdx + 1;
                         setCurrentStepIndex(prev => prev + 1);
-                        if (isVoiceOn) speak(`${nextStep.instruction}`);
+                        if (isVoiceOn && !spokeThisTick) speak(`${nextStep.instruction}`);
                     }
                 }
             },
@@ -474,20 +514,53 @@ const MapView = () => {
                 <Col>
                     <div className="d-flex align-items-center">
                         <h3 className="mb-0 text-truncate me-2 fw-bold" style={{ maxWidth: '200px', color: 'var(--ink)' }}>{currentTrip.title}</h3>
-                        <Button variant="outline-primary" size="sm" className="rounded-circle" onClick={() => { setEditSiteData(null); setShowModal(true); }}>
-                            <FaPlus />
-                        </Button>
+                        <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="d-inline-block">
+                            <Button
+                                variant="outline-primary"
+                                className="toolbar-icon-btn"
+                                onClick={() => { setEditSiteData(null); setShowModal(true); }}
+                                title="Add site"
+                                aria-label="Add site"
+                            >
+                                <FaPlus />
+                            </Button>
+                        </motion.span>
                     </div>
                     {savingStatus && <small className="text-muted ms-2">{savingStatus}</small>}
                 </Col>
                 <Col xs="auto" className="d-flex align-items-center">
-                    <Button variant="outline-info" className="me-2 rounded-circle" onClick={refreshGPS} title="Refresh GPS">
-                        <FaCrosshairs />
-                    </Button>
-                    <Button variant={voiceEnabled ? "success" : "outline-secondary"} className="me-2 rounded-circle" onClick={() => setVoiceEnabled(!voiceEnabled)}>
-                        {voiceEnabled ? <FaVolumeUp /> : <FaVolumeMute />}
-                    </Button>
-                    <Button variant="primary" className="rounded-pill px-4" onClick={optimizeRoute} disabled={isOptimizing || !userPos}>
+                    <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="d-inline-block me-2">
+                        <Button
+                            variant="outline-info"
+                            className="toolbar-icon-btn"
+                            onClick={refreshGPS}
+                            title="Refresh GPS"
+                            aria-label="Refresh GPS"
+                        >
+                            <FaCrosshairs />
+                        </Button>
+                    </motion.span>
+                    <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="d-inline-block me-2">
+                        <Button
+                            variant={voiceEnabled ? "primary" : "outline-secondary"}
+                            className="toolbar-icon-btn"
+                            onClick={() => {
+                                const next = !voiceEnabled;
+                                setVoiceEnabled(next);
+                                // Speaking here, inside the real click, both confirms
+                                // audibly that voice is on and "unlocks" speech
+                                // synthesis on browsers (notably iOS Safari) that
+                                // silently block speak() calls made later from an
+                                // async callback with no user gesture in the stack.
+                                if (next) speak('Voice guidance enabled');
+                            }}
+                            title={voiceEnabled ? "Disable voice guidance" : "Enable voice guidance"}
+                            aria-label={voiceEnabled ? "Disable voice guidance" : "Enable voice guidance"}
+                        >
+                            {voiceEnabled ? <FaVolumeUp /> : <FaVolumeMute />}
+                        </Button>
+                    </motion.span>
+                    <Button variant="primary" className="rounded-pill px-4" onClick={() => optimizeRoute()} disabled={isOptimizing || !userPos}>
                         {isOptimizing ? <Spinner size="sm" /> : <FaRoute className="me-2" />}
                         Optimize
                     </Button>
@@ -499,19 +572,22 @@ const MapView = () => {
                     <div className="map-container position-relative">
                         <MapContainer center={center} zoom={13} zoomControl={false}>
                             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                            {userPos && <Marker position={[userPos.lat, userPos.lng]} icon={blueIcon} />}
+                            {userPos && <Marker position={[userPos.lat, userPos.lng]} icon={userLocationIcon} zIndexOffset={1000} />}
                             {routeData && (
-                                <GeoJSON 
-                                    key={JSON.stringify(routeData.features[0].geometry.coordinates[0])} 
-                                    data={routeData} 
-                                    style={{ color: '#3388ff', weight: 5, opacity: 0.7 }} 
+                                <GeoJSON
+                                    key={JSON.stringify(routeData.features[0].geometry.coordinates[0])}
+                                    data={routeData}
+                                    style={{ color: '#2563EB', weight: 5, opacity: 0.75 }}
                                 />
                             )}
-                            {sites.map((site) => (
-                                <Marker 
-                                    key={site.id} 
+                            {sites.map((site, index) => (
+                                <Marker
+                                    key={site.id}
                                     position={[site.latitude, site.longitude]}
-                                    icon={site.is_checked ? greenIcon : (site.id === nextSite?.id ? yellowIcon : redIcon)}
+                                    icon={getSitePinIcon(
+                                        site.is_checked ? 'checked' : (site.id === nextSite?.id ? 'next' : 'pending'),
+                                        index + 1
+                                    )}
                                 >
                                     <Popup minWidth={220}>
                                         <div className="p-1">
