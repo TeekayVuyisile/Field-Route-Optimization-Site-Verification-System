@@ -14,7 +14,7 @@ dist-ssr
 .env
 supabase_schema.sql
 supabase_fix.sql
-.claude
+.claude/
 CLAUDE.md
 
 # Editor directories and files
