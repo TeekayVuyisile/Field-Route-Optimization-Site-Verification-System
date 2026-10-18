@@ -4,6 +4,7 @@ export const summarizeReport = (sites, photos) => {
     return {
         total: sites.length,
         visited,
+        flagged: sites.filter((s) => s.is_checked && s.check_flagged).length,
         remaining: sites.length - visited,
         photoCount: photos.length,
         percent: sites.length ? Math.round((visited / sites.length) * 100) : 0,
@@ -21,7 +22,10 @@ export const csvText = (value) => {
     return `"${safe.replaceAll('"', '""')}"`;
 };
 
-const CSV_HEADERS = ['Stop', 'Site name', 'Status', 'Notes', 'Latitude', 'Longitude', 'Photos'];
+const CSV_HEADERS = [
+    'Stop', 'Site name', 'Status', 'Notes', 'Latitude', 'Longitude', 'Photos',
+    'Checked in at', 'Distance from site (m)', 'Flagged', 'Check-in reason',
+];
 
 /**
  * The verification log as CSV, in visiting order. Starts with a byte-order
@@ -39,6 +43,11 @@ export const buildTripCsv = (sites, photos) => {
         site.latitude,
         site.longitude,
         photoCounts.get(site.id) ?? 0,
+        // ISO 8601 with offset: unambiguous, and Excel/Sheets parse it
+        site.checked_at ?? '',
+        site.check_distance_m == null ? '' : Math.round(site.check_distance_m),
+        csvText(site.is_checked ? (site.check_flagged ? 'Yes' : 'No') : ''),
+        csvText(site.check_note),
     ].join(','));
 
     return `\uFEFF${[CSV_HEADERS.join(','), ...rows].join('\r\n')}\r\n`;

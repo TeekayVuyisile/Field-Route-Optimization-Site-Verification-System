@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { buildTripCsv, csvText, fileSlug, summarizeReport } from './tripReport';
 
 const sites = [
-    { id: 's1', name: 'Tower "North"', is_checked: true, notes: 'Gate code 1234', latitude: -26.2041, longitude: 28.0473 },
+    { id: 's1', name: 'Tower "North"', is_checked: true, notes: 'Gate code 1234', latitude: -26.2041, longitude: 28.0473,
+      checked_at: '2026-10-18T08:30:00+00:00', check_distance_m: 412.6, check_flagged: true, check_note: 'Pin at the gate' },
     { id: 's2', name: '=HYPERLINK("http://x")', is_checked: false, notes: null, latitude: -26.3, longitude: 28.1 },
 ];
 const photos = [{ site_id: 's1' }, { site_id: 's1' }];
 
 describe('summarizeReport', () => {
     it('counts visited, remaining and photos', () => {
-        expect(summarizeReport(sites, photos)).toEqual({ total: 2, visited: 1, remaining: 1, photoCount: 2, percent: 50 });
+        expect(summarizeReport(sites, photos)).toEqual({ total: 2, visited: 1, flagged: 1, remaining: 1, photoCount: 2, percent: 50 });
     });
 
     it('is 0% for an empty trip rather than NaN', () => {
@@ -32,10 +33,10 @@ describe('csvText', () => {
 describe('buildTripCsv', () => {
     it('writes one row per site in visiting order with photo counts', () => {
         const lines = buildTripCsv(sites, photos).split('\r\n');
-        expect(lines[0]).toBe('\uFEFFStop,Site name,Status,Notes,Latitude,Longitude,Photos');
-        expect(lines[1]).toBe('1,"Tower ""North""","Visited","Gate code 1234",-26.2041,28.0473,2');
+        expect(lines[0]).toBe('\uFEFFStop,Site name,Status,Notes,Latitude,Longitude,Photos,Checked in at,Distance from site (m),Flagged,Check-in reason');
+        expect(lines[1]).toBe('1,"Tower ""North""","Visited","Gate code 1234",-26.2041,28.0473,2,2026-10-18T08:30:00+00:00,413,"Yes","Pin at the gate"');
         // Negative coordinates stay numbers; only text cells are defused
-        expect(lines[2]).toBe(`2,"'=HYPERLINK(""http://x"")","Not visited","",-26.3,28.1,0`);
+        expect(lines[2]).toBe(`2,"'=HYPERLINK(""http://x"")","Not visited","",-26.3,28.1,0,,,"",""`);
     });
 });
 

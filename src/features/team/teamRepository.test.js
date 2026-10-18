@@ -27,9 +27,18 @@ describe('teamRepository', () => {
     });
 
     it('maps the membership row, including the team name', async () => {
-        result = { data: { org_id: 'o1', role: 'agent', email: 'a@x.co', organizations: { name: 'Ops' } }, error: null };
-        expect(await team.fetchMyMembership('u1')).toEqual({ orgId: 'o1', orgName: 'Ops', role: 'agent', email: 'a@x.co' });
+        result = { data: { org_id: 'o1', role: 'agent', email: 'a@x.co', organizations: { name: 'Ops', checkin_radius_m: 300 } }, error: null };
+        expect(await team.fetchMyMembership('u1')).toEqual({ orgId: 'o1', orgName: 'Ops', checkinRadiusM: 300, role: 'agent', email: 'a@x.co' });
         expect(calls).toContainEqual(['eq', 'user_id', 'u1']);
+    });
+
+    it('saves the check-in radius, and reports when RLS refused it', async () => {
+        result = { data: [{ checkin_radius_m: 250 }], error: null };
+        expect(await team.updateCheckinRadius('o1', 250)).toBe(250);
+        expect(calls).toContainEqual(['update', { checkin_radius_m: 250 }]);
+
+        result = { data: [], error: null };
+        await expect(team.updateCheckinRadius('o1', 250)).rejects.toThrow('Only a team manager');
     });
 
     it('returns null when the user has no team yet', async () => {

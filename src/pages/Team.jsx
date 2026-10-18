@@ -12,12 +12,13 @@ import Button from '../components/ui/Button';
 import { Field, Input, Select } from '../components/ui/Field';
 import { Alert, Badge, Card, PageHeader, Skeleton } from '../components/ui/primitives';
 import { ConfirmDialog } from '../components/ui/Dialog';
+import CheckinRadiusCard from '../components/team/CheckinRadiusCard';
 
 const ROLE_LABELS = { manager: 'Manager', agent: 'Field agent' };
 
 const Team = () => {
     const { user } = useAuth();
-    const { membership, isManager, loading: teamLoading } = useTeam();
+    const { membership, isManager, loading: teamLoading, refresh: refreshTeam } = useTeam();
     const [members, setMembers] = useState([]);
     const [invitations, setInvitations] = useState([]);
     const [loaded, setLoaded] = useState(false);
@@ -171,6 +172,7 @@ const Team = () => {
                 </Card>
 
                 {isManager && (
+                    <div className="space-y-6">
                     <Card as="section" aria-labelledby="invite-heading" className="p-5">
                         <h2 id="invite-heading" className="font-bold">Invite a teammate</h2>
                         <p className="mt-1 text-sm text-muted">
@@ -229,6 +231,13 @@ const Team = () => {
                             </div>
                         )}
                     </Card>
+                    <CheckinRadiusCard
+                        key={membership.checkinRadiusM}
+                        orgId={orgId}
+                        radius={membership.checkinRadiusM}
+                        onSaved={refreshTeam}
+                    />
+                    </div>
                 )}
             </div>
 

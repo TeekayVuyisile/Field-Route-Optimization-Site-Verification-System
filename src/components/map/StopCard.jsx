@@ -1,10 +1,12 @@
 import { useId, useState } from 'react';
-import { LuCamera, LuCheck, LuCloudUpload, LuNavigation, LuNotebookPen, LuPencil, LuTrash2, LuUndo2 } from 'react-icons/lu';
+import dayjs from 'dayjs';
+import { LuCamera, LuCheck, LuCircleAlert, LuNavigation, LuNotebookPen, LuPencil, LuTrash2, LuUndo2 } from 'react-icons/lu';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
 import { Badge } from '../ui/primitives';
 import { cn } from '../ui/cn';
-import { countLabel, formatDistance } from '../../lib/format';
+import { formatDistance } from '../../lib/format';
+import PhotoStrip from './PhotoStrip';
 
 const tile = 'flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-border bg-surface text-xs font-semibold text-fg transition-colors duration-200 hover:bg-surface-2';
 
@@ -12,11 +14,33 @@ const tile = 'flex h-16 cursor-pointer flex-col items-center justify-center gap-
 const directionsUrl = (site) =>
     `https://www.google.com/maps/dir/?api=1&destination=${site.latitude},${site.longitude}&travelmode=driving`;
 
+// How the check-in went: when, how far from the site, and whether it's
+// flagged for the manager (beyond the team radius, or no location)
+const CheckInSummary = ({ site }) => {
+    const when = site.checked_at ? dayjs(site.checked_at).format('HH:mm') : null;
+    const where = site.check_distance_m != null ? `${formatDistance(site.check_distance_m)} from the site` : null;
+    const text = [when && `Checked in ${when}`, where].filter(Boolean).join(' · ') || 'Checked in';
+
+    return site.check_flagged ? (
+        <div className="flex gap-2 rounded-xl bg-warning-soft p-3 text-sm text-warning" role="status">
+            <LuCircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <p>
+                <span className="font-semibold">{where ? text : `${text} · no location`}. Flagged for review.</span>
+                {site.check_note && <span className="block text-fg">"{site.check_note}"</span>}
+            </p>
+        </div>
+    ) : (
+        <p className="flex items-center gap-2 text-sm text-success" role="status">
+            <LuCheck className="size-4" aria-hidden /> {text}
+        </p>
+    );
+};
+
 /**
  * The selected stop (the next one by default) with the actions a driver
  * needs on arrival. Big targets: this is used one-handed, often in a car.
  */
-const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, queuedPhotos = 0, onToggleChecked, onPhoto, onNotesChange, onEdit, onDelete }) => {
+const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, photos = [], queuedPhotos = [], onOpenPhoto, onToggleChecked, onPhoto, onNotesChange, onEdit, onDelete }) => {
     // Render with key={site.id}: notes start open when the site has some
     const [showNotes, setShowNotes] = useState(() => Boolean(site.notes));
     const notesId = useId();
@@ -47,6 +71,8 @@ const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, queue
                 </div>
             </div>
 
+            {site.is_checked && <CheckInSummary site={site} />}
+
             <div className="grid grid-cols-3 gap-2">
                 <a href={directionsUrl(site)} target="_blank" rel="noopener noreferrer" className={tile}>
                     <LuNavigation className="size-5 text-accent" aria-hidden /> Navigate
@@ -75,12 +101,7 @@ const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, queue
                 </button>
             </div>
 
-            {queuedPhotos > 0 && (
-                <p className="flex items-center gap-2 text-sm text-muted" role="status">
-                    <LuCloudUpload className="size-4 text-accent" aria-hidden />
-                    {countLabel(queuedPhotos, 'photo')} waiting to upload
-                </p>
-            )}
+            <PhotoStrip siteName={site.name} photos={photos} queued={queuedPhotos} onOpen={onOpenPhoto} />
 
             {showNotes && (
                 <textarea

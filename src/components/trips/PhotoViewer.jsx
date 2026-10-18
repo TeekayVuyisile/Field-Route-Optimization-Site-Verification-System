@@ -17,6 +17,8 @@ const PhotoViewer = ({ open, onOpenChange, siteName, photos, startIndex = 0, onD
     const [deleting, setDeleting] = useState(false);
     const photo = photos[Math.min(index, photos.length - 1)];
     if (!photo) return null;
+    // When the photo was taken (offline photos upload later); older ones only have the upload time
+    const takenAt = photo.taken_at ?? photo.created_at;
 
     const go = (step) => {
         setConfirming(false);
@@ -39,7 +41,7 @@ const PhotoViewer = ({ open, onOpenChange, siteName, photos, startIndex = 0, onD
             open={open}
             onOpenChange={onOpenChange}
             title={siteName}
-            description={`Photo ${index + 1} of ${photos.length}${photo.created_at ? ` · ${dayjs(photo.created_at).format('D MMM YYYY, HH:mm')}` : ''}`}
+            description={`Photo ${index + 1} of ${photos.length}${takenAt ? ` · ${dayjs(takenAt).format('D MMM YYYY, HH:mm')}` : ''}`}
             className="sm:max-w-3xl"
         >
             <div className="relative -mx-6 bg-ink">

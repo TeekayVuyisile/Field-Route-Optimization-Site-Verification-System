@@ -9,12 +9,30 @@ import { supabase } from '../../lib/supabase';
 export const fetchMyMembership = async (userId) => {
     const { data, error } = await supabase
         .from('org_members')
-        .select('org_id, role, email, organizations(name)')
+        .select('org_id, role, email, organizations(name, checkin_radius_m)')
         .eq('user_id', userId)
         .maybeSingle();
     if (error) throw error;
     if (!data) return null;
-    return { orgId: data.org_id, orgName: data.organizations?.name ?? '', role: data.role, email: data.email };
+    return {
+        orgId: data.org_id,
+        orgName: data.organizations?.name ?? '',
+        checkinRadiusM: data.organizations?.checkin_radius_m ?? 150,
+        role: data.role,
+        email: data.email,
+    };
+};
+
+/** Managers only (RLS): how far from a site a check-in may be before it's flagged. */
+export const updateCheckinRadius = async (orgId, meters) => {
+    const { data, error } = await supabase
+        .from('organizations')
+        .update({ checkin_radius_m: meters })
+        .eq('id', orgId)
+        .select('checkin_radius_m');
+    if (error) throw error;
+    if (!data?.length) throw new Error('Only a team manager can change this.');
+    return data[0].checkin_radius_m;
 };
 
 /** Server-side repair: creates (or joins) a team for the signed-in user. */
