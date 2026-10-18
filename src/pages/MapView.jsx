@@ -14,10 +14,12 @@ import { toast } from 'react-toastify';
 import { speak, isOffRoute } from '../utils/navigationUtils';
 import { useGpsPosition } from '../features/navigation/useGpsPosition';
 import { evaluateGuidance, findNextSite, OFF_ROUTE_M, HEADS_UP_M } from '../features/navigation/guidance';
-import { useSiteSync } from '../features/sites/useSiteSync';
+import { outbox } from '../features/offline';
+import { useOnline, useOutboxStatus } from '../features/offline/useOutbox';
+import { compressImage } from '../features/photos/compressImage';
 import { isPersistedId } from '../features/sites/siteIds';
 import * as siteRepository from '../features/sites/siteRepository';
-import { fetchTripWithSites, saveSiteOrder, updateTrip } from '../features/trips/tripRepository';
+import { fetchTripWithSites, saveSiteOrder } from '../features/trips/tripRepository';
 import { statusFromProgress } from '../features/trips/tripStatus';
 import { calculateDistance } from '../lib/geo';
 import { countLabel } from '../lib/format';
@@ -123,7 +125,8 @@ const MapView = () => {
     const [navigationSteps, setNavigationSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
-    const [uploadingSites, setUploadingSites] = useState(new Set());
+    // Sites whose photo is being compressed (a second or two on big photos)
+    const [preparingPhoto, setPreparingPhoto] = useState(new Set());
 
     // Guidance bookkeeping that must not trigger re-renders
     const lastRerouteTime = useRef(0);
@@ -134,7 +137,8 @@ const MapView = () => {
     // Only highlight a "next stop" once there is an optimized route to follow
     const nextSite = routeData ? findNextSite(sites) : null;
 
-    const { status: savingStatus, queueSiteUpdate, flushSite } = useSiteSync();
+    const online = useOnline();
+    const sync = useOutboxStatus();
 
     const applyRoute = (directions) => {
         lastHeadsUpIdx.current = -1;
@@ -299,14 +303,14 @@ const MapView = () => {
     const handleUpdateSite = (id, updates) => {
         const index = sites.findIndex(s => s.id === id);
         updateSite(index, updates);
-        if (isPersistedId(id)) queueSiteUpdate(id, updates);
+        if (isPersistedId(id)) outbox.update('site', id, updates);
     };
 
-    // Checking is a deliberate action: save it (and any pending notes for the
-    // site) immediately rather than waiting for the debounce
+    // Checking is a deliberate action: send it (and any pending notes for the
+    // site) at once rather than after the debounce
     const handleToggleChecked = (site) => {
-        handleUpdateSite(site.id, { is_checked: !site.is_checked });
-        if (isPersistedId(site.id)) flushSite(site.id);
+        updateSite(sites.findIndex(s => s.id === site.id), { is_checked: !site.is_checked });
+        if (isPersistedId(site.id)) outbox.update('site', site.id, { is_checked: !site.is_checked }, { immediate: true });
         syncTripStatus(useTripStore.getState().sites);
         // After a check-in the panel moves on to the next stop
         if (!site.is_checked) setSelectedId(null);
@@ -320,17 +324,22 @@ const MapView = () => {
         if (next === currentTrip.status) return;
 
         setCurrentTrip({ ...currentTrip, status: next });
-        updateTrip(currentTrip.id, { status: next })
-            .then(() => { if (next === 'completed') toast.success('All sites checked. Trip completed!'); })
-            .catch((error) => {
-                console.error('Updating trip status failed:', error);
-                toast.warn("Trip progress couldn't be saved; it will update on your next check.");
-            });
+        outbox.update('trip', currentTrip.id, { status: next }, { immediate: true });
+        if (next === 'completed') toast.success('All sites checked. Trip completed!');
+    };
+
+    // Adding and removing sites write straight to the database (a new site
+    // needs its real id before anything else can refer to it)
+    const needsSignal = (action) => {
+        if (navigator.onLine) return false;
+        toast.warn(`You're offline. ${action} needs signal; check-ins, notes and photos still work.`);
+        return true;
     };
 
     const handleDeleteSite = async () => {
         const site = siteToDelete;
         setSiteToDelete(null);
+        if (isPersistedId(site.id) && needsSignal('Removing a site')) return;
         try {
             removeSite(sites.findIndex(s => s.id === site.id));
             if (selectedId === site.id) setSelectedId(null);
@@ -347,6 +356,7 @@ const MapView = () => {
 
     const handleAddSite = async (newSite) => {
         setSiteDialog(null);
+        if (currentTrip?.id && needsSignal('Adding a site')) return;
         try {
             if (currentTrip?.id) {
                 const saved = await siteRepository.insertSite(currentTrip.id, newSite, sites.length);
@@ -361,22 +371,15 @@ const MapView = () => {
         }
     };
 
-    const handleSaveEdit = async (updatedSite) => {
+    const handleSaveEdit = (updatedSite) => {
         setSiteDialog(null);
-        try {
-            updateSite(sites.findIndex(s => s.id === updatedSite.id), updatedSite);
-            if (isPersistedId(updatedSite.id)) {
-                await siteRepository.updateSite(updatedSite.id, {
-                    name: updatedSite.name,
-                    latitude: updatedSite.latitude,
-                    longitude: updatedSite.longitude
-                });
-            }
-            toast.success("Site updated");
-            warnIfOutside(updatedSite);
-        } catch {
-            toast.error("Couldn't save the change. Try again.");
+        updateSite(sites.findIndex(s => s.id === updatedSite.id), updatedSite);
+        if (isPersistedId(updatedSite.id)) {
+            const { name, latitude, longitude } = updatedSite;
+            outbox.update('site', updatedSite.id, { name, latitude, longitude }, { immediate: true });
         }
+        toast.success("Site updated");
+        warnIfOutside(updatedSite);
     };
 
     const handleCapturePhoto = async (siteId, file) => {
@@ -390,15 +393,15 @@ const MapView = () => {
             return;
         }
 
+        // Compressed, then kept on the phone until it's uploaded: a photo
+        // taken without signal is never lost
+        setPreparingPhoto(prev => new Set(prev).add(siteId));
         try {
-            setUploadingSites(prev => new Set(prev).add(siteId));
-            await siteRepository.uploadSitePhoto({ userId: user.id, siteId, file });
-            toast.success("Photo saved");
-        } catch (error) {
-            console.error('Upload error details:', error);
-            toast.error(`Upload failed: ${error.message || 'Check security settings'}`);
+            const compressed = await compressImage(file);
+            outbox.add('photo', { id: crypto.randomUUID(), userId: user.id, siteId, file: compressed, fileName: file.name });
+            toast.success(navigator.onLine ? 'Photo saved' : "Photo saved on this phone. It'll upload when you have signal.");
         } finally {
-            setUploadingSites(prev => {
+            setPreparingPhoto(prev => {
                 const next = new Set(prev);
                 next.delete(siteId);
                 return next;
@@ -453,6 +456,11 @@ const MapView = () => {
     }
 
     const checkedCount = sites.filter(s => s.is_checked).length;
+    // `sync` re-renders this on every outbox change, so these stay current
+    const queuedPhotos = outbox.pendingItems('photo');
+    const syncLabel = !online ? 'Offline, saving on this phone'
+        : sync.syncing ? 'Saving...'
+        : sync.pending > 0 ? 'Waiting to save' : '';
     const allChecked = checkedCount === sites.length;
     const selectedSite = sites.find(s => s.id === selectedId) ?? nextSite ?? sites.find(s => !s.is_checked) ?? null;
     const selectedIndex = sites.indexOf(selectedSite);
@@ -469,7 +477,8 @@ const MapView = () => {
                 <MapContainer center={[sites[0].latitude, sites[0].longitude]} zoom={13} zoomControl={false} className="h-full w-full">
                     {/* OSM's tile usage policy requires visible attribution */}
                     <TileLayer
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        crossOrigin="anonymous"
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     />
                     {userPos && <Marker position={[userPos.lat, userPos.lng]} icon={userLocationIcon} zIndexOffset={1000} />}
@@ -565,7 +574,7 @@ const MapView = () => {
                         <h1 className="truncate font-bold">{currentTrip.title}</h1>
                         <p className="text-xs text-muted">
                             {checkedCount} of {countLabel(sites.length, 'stop')} visited
-                            {savingStatus && <span className="text-faint"> · {savingStatus}</span>}
+                            {syncLabel && <span className={online ? 'text-faint' : 'font-semibold text-warning'}> · {syncLabel}</span>}
                         </p>
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => setSiteDialog({ site: null })} aria-label="Add a site" title="Add a site">
@@ -606,7 +615,8 @@ const MapView = () => {
                                 total={sites.length}
                                 isNext={selectedSite.id === nextSite?.id}
                                 distance={distanceToSelected}
-                                uploading={uploadingSites.has(selectedSite.id)}
+                                preparingPhoto={preparingPhoto.has(selectedSite.id)}
+                                queuedPhotos={queuedPhotos.filter((p) => p.siteId === selectedSite.id).length}
                                 onToggleChecked={() => handleToggleChecked(selectedSite)}
                                 onPhoto={(file) => handleCapturePhoto(selectedSite.id, file)}
                                 onNotesChange={(notes) => handleUpdateSite(selectedSite.id, { notes })}

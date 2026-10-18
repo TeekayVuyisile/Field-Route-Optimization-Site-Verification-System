@@ -6,16 +6,18 @@ const chain = () => {
     const q = {
         select: () => q, in: (...a) => { db.calls.push(['in', ...a]); return q; },
         order: () => Promise.resolve(db.result),
-        delete: () => q, eq: (...a) => { db.calls.push(['eq', ...a]); return Promise.resolve(db.result); },
+        delete: () => q, eq: (...a) => { db.calls.push(['eq', ...a]); return Object.assign(Promise.resolve(db.result), q); },
+        maybeSingle: () => Promise.resolve(db.lookup ?? { data: null, error: null }),
+        insert: (rows) => { db.calls.push(['insert', rows]); return Promise.resolve({ error: null }); },
     };
     return q;
 };
-const storage = { createSignedUrls: vi.fn(), remove: vi.fn(), download: vi.fn() };
+const storage = { createSignedUrls: vi.fn(), remove: vi.fn(), download: vi.fn(), upload: vi.fn() };
 vi.mock('../../lib/supabase', () => ({
     supabase: { from: () => chain(), storage: { from: () => storage } },
 }));
 
-const { fetchSitePhotos, deleteSitePhoto } = await import('./siteRepository');
+const { fetchSitePhotos, deleteSitePhoto, uploadSitePhoto } = await import('./siteRepository');
 
 describe('fetchSitePhotos', () => {
     beforeEach(() => {
@@ -66,5 +68,36 @@ describe('deleteSitePhoto', () => {
         storage.remove.mockReset().mockResolvedValue({ error: new Error('RLS') });
         await expect(deleteSitePhoto({ id: 'p1', storage_path: 'u/s1/a.jpg' })).rejects.toThrow('RLS');
         expect(db.calls).toEqual([]);
+    });
+});
+
+describe('uploadSitePhoto', () => {
+    const photo = { id: 'p1', userId: 'u1', siteId: 's1', file: new Blob(['x'], { type: 'image/jpeg' }), fileName: 'IMG_1.HEIC' };
+
+    beforeEach(() => {
+        db.calls = [];
+        db.lookup = undefined;
+        storage.upload.mockReset().mockResolvedValue({ error: null });
+    });
+
+    it('stores the file under the user id with a path made from the photo id', async () => {
+        const path = await uploadSitePhoto(photo);
+        expect(path).toBe('u1/s1/p1.jpg');
+        expect(storage.upload).toHaveBeenCalledWith('u1/s1/p1.jpg', photo.file, { contentType: 'image/jpeg' });
+        expect(db.calls.find(([op]) => op === 'insert')[1]).toEqual([
+            { site_id: 's1', user_id: 'u1', storage_path: 'u1/s1/p1.jpg', file_name: 'IMG_1.HEIC' },
+        ]);
+    });
+
+    it('is safe to repeat: an existing file and record are not duplicated', async () => {
+        storage.upload.mockResolvedValue({ error: { statusCode: '409', message: 'The resource already exists' } });
+        db.lookup = { data: { id: 'row1' }, error: null };
+        await uploadSitePhoto(photo);
+        expect(db.calls.some(([op]) => op === 'insert')).toBe(false);
+    });
+
+    it('throws other upload errors so the outbox can decide', async () => {
+        storage.upload.mockResolvedValue({ error: { statusCode: '403', message: 'denied' } });
+        await expect(uploadSitePhoto(photo)).rejects.toMatchObject({ statusCode: '403' });
     });
 });

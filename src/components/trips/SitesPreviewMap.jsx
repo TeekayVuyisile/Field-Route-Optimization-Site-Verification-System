@@ -37,7 +37,8 @@ const SitesPreviewMap = ({ sites }) => {
         >
             {/* OSM's tile usage policy requires visible attribution */}
             <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                crossOrigin="anonymous"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
             {readable.map((site) => (

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import useTripStore from '../store/useTripStore';
+import { outbox } from '../features/offline';
 import { AuthContext } from './useAuth';
 import { FullScreenLoader } from '../components/ui/Loaders';
 
@@ -15,6 +16,8 @@ export const AuthProvider = ({ children }) => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             setUser(session?.user ?? null);
             setLoading(false);
+            // Queued edits only go out under the account that made them
+            outbox.setUser(session?.user?.id ?? null);
 
             // The active trip is persisted on the device; don't hand it to
             // whoever signs in next on a shared phone

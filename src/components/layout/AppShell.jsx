@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import { LuLayoutDashboard, LuMap, LuUsers, LuPlus, LuLogOut, LuMoon, LuSun } from 'react-icons/lu';
 import { useAuth } from '../../context/useAuth';
@@ -7,6 +8,10 @@ import Logo from '../ui/Logo';
 import Button from '../ui/Button';
 import { cn } from '../ui/cn';
 import { useTheme } from '../../lib/useTheme';
+import { ConfirmDialog } from '../ui/Dialog';
+import SyncStatus from './SyncStatus';
+import { useOutboxStatus } from '../../features/offline/useOutbox';
+import { countLabel } from '../../lib/format';
 
 const NAV_ITEMS = [
     { to: '/dashboard', label: 'Trips', icon: LuLayoutDashboard },
@@ -43,7 +48,11 @@ const AppShell = ({ children }) => {
         navigate('/create-trip');
     };
 
+    const { pending } = useOutboxStatus();
+    const [confirmSignOut, setConfirmSignOut] = useState(false);
+
     const handleSignOut = async () => {
+        setConfirmSignOut(false);
         await signOut();
         navigate('/login');
     };
@@ -75,6 +84,7 @@ const AppShell = ({ children }) => {
                             </nav>
 
                             <div className="ml-auto flex items-center gap-2">
+                                <SyncStatus />
                                 <Button className="hidden md:inline-flex" onClick={startNewTrip}>
                                     <LuPlus className="size-4" aria-hidden /> New trip
                                 </Button>
@@ -92,7 +102,7 @@ const AppShell = ({ children }) => {
                                     </div>
                                 </div>
                                 {themeButton}
-                                <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Sign out" title="Sign out">
+                                <Button variant="ghost" size="icon" onClick={() => (pending > 0 ? setConfirmSignOut(true) : handleSignOut())} aria-label="Sign out" title="Sign out">
                                     <LuLogOut className="size-5" />
                                 </Button>
                             </div>
@@ -141,6 +151,14 @@ const AppShell = ({ children }) => {
                     </div>
                 </nav>
             )}
+            <ConfirmDialog
+                open={confirmSignOut}
+                onOpenChange={setConfirmSignOut}
+                title="Changes not sent yet"
+                description={`${countLabel(pending, 'change')} from this phone haven't reached the server. They stay on this phone and are sent the next time you sign in here. To send them now, wait for signal before signing out.`}
+                confirmLabel="Sign out anyway"
+                onConfirm={handleSignOut}
+            />
         </div>
     );
 };

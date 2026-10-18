@@ -7,6 +7,8 @@ import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { PageLoader } from './components/ui/Loaders';
 import { ToastContainer } from 'react-toastify';
+import UpdatePrompt from './components/layout/UpdatePrompt';
+import { useOutboxSync } from './features/offline/useOutbox';
 
 // Each page is its own chunk: the map (Leaflet), import (SheetJS) and review
 // (TanStack Table) code only downloads when that page is opened
@@ -92,6 +94,8 @@ const AppRoutes = () => {
 };
 
 function App() {
+  useOutboxSync();
+
   return (
     <AuthProvider>
       <TeamProvider>
@@ -101,6 +105,7 @@ function App() {
           </AppShell>
           {/* Top: at the bottom, phone toasts covered the tab bar and Check in */}
           <ToastContainer position="top-center" autoClose={3500} limit={3} />
+          <UpdatePrompt />
         </Router>
       </TeamProvider>
     </AuthProvider>
