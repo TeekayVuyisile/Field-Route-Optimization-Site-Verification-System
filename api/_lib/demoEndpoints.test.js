@@ -4,9 +4,11 @@ const startDemo = vi.fn();
 vi.mock('./demo.js', async (original) => ({ ...(await original()), startDemo: (...a) => startDemo(...a), cleanupExpiredDemos: async () => 2 }));
 let adminClient = {};
 vi.mock('./supabaseAdmin.js', () => ({ getAdminClient: () => adminClient }));
+const pingDatabase = vi.fn();
+vi.mock('./keepalive.js', () => ({ pingDatabase: (...a) => pingDatabase(...a) }));
 
 const { POST: start } = await import('../demo/start.js');
-const { GET: cleanup } = await import('../demo/cleanup.js');
+const { GET: daily } = await import('../cron/daily.js');
 
 const post = (ip) => new Request('http://x/api/demo/start', { method: 'POST', headers: { 'x-forwarded-for': ip } });
 
@@ -28,12 +30,40 @@ describe('POST /api/demo/start', () => {
     });
 });
 
-describe('GET /api/demo/cleanup', () => {
+describe('GET /api/cron/daily', () => {
+    const cron = (auth) => daily(new Request('http://x/api/cron/daily', { headers: auth ? { authorization: auth } : {} }));
+
     it('only runs for the cron secret', async () => {
         vi.stubEnv('CRON_SECRET', 's3cret');
-        expect((await cleanup(new Request('http://x/api/demo/cleanup'))).status).toBe(401);
-        const ok = await cleanup(new Request('http://x/api/demo/cleanup', { headers: { authorization: 'Bearer s3cret' } }));
-        expect(ok.status).toBe(200);
-        expect(await ok.json()).toEqual({ removed: 2 });
+        expect((await cron()).status).toBe(401);
+        expect((await cron('Bearer wrong')).status).toBe(401);
+        expect(pingDatabase).not.toHaveBeenCalled();
+    });
+
+    it('pings the database and cleans up demos', async () => {
+        vi.stubEnv('CRON_SECRET', 's3cret');
+        pingDatabase.mockResolvedValue('2026-10-18T03:00:00Z');
+        const res = await cron('Bearer s3cret');
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ keepalive: '2026-10-18T03:00:00Z', demosRemoved: 2 });
+        expect(pingDatabase).toHaveBeenCalledWith('vercel-cron');
+    });
+
+    it('still cleans up when the ping fails, and reports the failure', async () => {
+        vi.stubEnv('CRON_SECRET', 's3cret');
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+        pingDatabase.mockRejectedValue(new Error('keepalive() answered HTTP 404'));
+        const res = await cron('Bearer s3cret');
+        expect(res.status).toBe(500);
+        expect(await res.json()).toEqual({ keepaliveError: 'keepalive() answered HTTP 404', demosRemoved: 2 });
+    });
+
+    it('keeps the project alive even without the service-role key', async () => {
+        vi.stubEnv('CRON_SECRET', 's3cret');
+        pingDatabase.mockResolvedValue('t');
+        adminClient = null;
+        const res = await cron('Bearer s3cret');
+        expect(res.status).toBe(200);
+        expect((await res.json()).demoCleanup).toMatch(/skipped/);
     });
 });
