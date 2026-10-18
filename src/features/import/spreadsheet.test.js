@@ -60,6 +60,20 @@ describe('summarizeSites', () => {
 });
 
 describe('readSpreadsheet', () => {
+    it('reads a real Excel workbook (SheetJS 0.20.x)', async () => {
+        const XLSX = await import('xlsx');
+        const sheet = XLSX.utils.aoa_to_sheet([['Site Name', 'Latitude', 'Longitude'], ['Tower', -26.2041, 28.0473], ['Café kiosk', '-26,3', '28,1']]);
+        const book = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(book, sheet, 'Sites');
+        const bytes = XLSX.write(book, { type: 'array', bookType: 'xlsx' });
+        const file = new File([bytes], 'sites.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+        const { headers, rows } = await readSpreadsheet(file);
+        expect(headers).toEqual(['Site Name', 'Latitude', 'Longitude']);
+        expect(rows).toHaveLength(2);
+        expect(rows[1]).toMatchObject({ 'Site Name': 'Café kiosk', Latitude: '-26,3' });
+    });
+
     it('reads a semicolon CSV (SA Excel export) with headers', async () => {
         const file = new File(['Site;Lat;Lng\nTower 1;-26,2041;28,0473\n'], 'sites.csv', { type: 'text/csv' });
         const { headers, rows } = await readSpreadsheet(file);
