@@ -13,7 +13,7 @@ import { FaTrash, FaExchangeAlt, FaPlus, FaSave, FaChevronUp, FaChevronDown } fr
 import ManualSiteModal from '../components/ManualSiteModal';
 import { validateCoordinates } from '../utils/validation';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { toast } from 'react-toastify';
 
 const TripDetails = () => {

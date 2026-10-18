@@ -118,7 +118,7 @@ const TripReview = () => {
             setImages(prev => prev.filter(i => i.id !== img.id));
             toast.success("Image deleted");
             if (selectedImage?.id === img.id) setShowGallery(false);
-        } catch (error) {
+        } catch {
             toast.error("Failed to delete image");
         }
     };
@@ -139,7 +139,7 @@ const TripReview = () => {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-        } catch (error) {
+        } catch {
             toast.error("Failed to download image");
         }
     };

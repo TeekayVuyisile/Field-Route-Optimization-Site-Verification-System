@@ -1,7 +1,7 @@
 import { Navbar, Nav, Container, Button } from 'react-bootstrap';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { FaRoute, FaSignOutAlt } from 'react-icons/fa';
 import './Navigation.css';
 

@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { FaUpload, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard, FaPlus, FaCheck } from 'react-icons/fa';
 import { validateCoordinates } from '../utils/validation';
+import { createLocalId } from '../features/sites/siteIds';
 import useTripStore from '../store/useTripStore';
 import ManualSiteModal from '../components/ManualSiteModal';
 
@@ -94,7 +95,7 @@ const CreateTrip = () => {
             const validation = validateCoordinates(lat, lng);
 
             return {
-                id: crypto.randomUUID(),
+                id: createLocalId(),
                 name: row[mapping.name] || `Site ${index + 1}`,
                 latitude: lat,
                 longitude: lng,
