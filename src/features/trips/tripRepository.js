@@ -34,6 +34,33 @@ export const fetchTripWithSites = async (tripId) => {
 };
 
 /**
+ * Trips visible to the user (RLS: managers get the whole team, agents their
+ * own + assigned), newest first, each with site progress counted by the
+ * database in the same request.
+ * @returns {Promise<Array>} trips with `siteCount` and `checkedCount`
+ */
+export const fetchTripsWithProgress = async () => {
+    const { data, error } = await supabase
+        .from('trips')
+        .select('*, site_total:sites(count), site_done:sites(count)')
+        .eq('site_done.is_checked', true)
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []).map(({ site_total, site_done, ...trip }) => ({
+        ...trip,
+        siteCount: site_total?.[0]?.count ?? 0,
+        checkedCount: site_done?.[0]?.count ?? 0,
+    }));
+};
+
+export const deleteTrip = async (tripId) => {
+    // .select() so an RLS-blocked delete (0 rows) is reported, not silent
+    const { data, error } = await supabase.from('trips').delete().eq('id', tripId).select('id');
+    if (error) throw error;
+    if (!data?.length) throw new Error("You can't delete this trip.");
+};
+
+/**
  * Updates trip fields (assignment, status). The guard_trip_write trigger
  * rejects assignments the caller's role doesn't allow.
  */
