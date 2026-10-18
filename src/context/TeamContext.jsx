@@ -15,27 +15,34 @@ export const TeamProvider = ({ children }) => {
     const [state, setState] = useState({ userId: null, membership: null, pendingInvitation: null, error: null });
     const [reloadKey, setReloadKey] = useState(0);
 
+    // Keyed on the id: auth hands out a new user object on every token
+    // refresh, which must not reload the team (and everything below it)
+    const userId = user?.id;
+
     useEffect(() => {
-        if (!user) return;
+        if (!userId) return;
         let cancelled = false;
+
+        // Membership and invitation in parallel: on a slow connection the
+        // sequential version doubled the time before the app could render
+        const load = () => Promise.all([fetchMyMembership(userId), fetchMyPendingInvitation()]);
 
         (async () => {
             try {
-                let membership = await fetchMyMembership(user.id);
+                let [membership, pendingInvitation] = await load();
                 if (!membership) {
                     await ensureMembership();
-                    membership = await fetchMyMembership(user.id);
+                    [membership, pendingInvitation] = await load();
                 }
-                const pendingInvitation = await fetchMyPendingInvitation();
-                if (!cancelled) setState({ userId: user.id, membership, pendingInvitation, error: null });
+                if (!cancelled) setState({ userId, membership, pendingInvitation, error: null });
             } catch (error) {
                 console.error('Loading team failed:', error);
-                if (!cancelled) setState({ userId: user.id, membership: null, pendingInvitation: null, error });
+                if (!cancelled) setState({ userId, membership: null, pendingInvitation: null, error });
             }
         })();
 
         return () => { cancelled = true; };
-    }, [user, reloadKey]);
+    }, [userId, reloadKey]);
 
     const current = user && state.userId === user.id ? state : null;
 

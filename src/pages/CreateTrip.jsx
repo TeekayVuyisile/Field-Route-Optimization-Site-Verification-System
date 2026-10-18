@@ -1,383 +1,423 @@
-import { useState, useRef } from 'react';
-import { Container, Row, Col, Card, Form, Button, Table } from 'react-bootstrap';
-import { motion } from 'framer-motion';
-import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
-import { toast } from 'react-toastify';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaUpload, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard, FaPlus, FaCheck } from 'react-icons/fa';
-import { validateCoordinates, parseCoordinate, hasReadableCoordinates as isReadable } from '../utils/validation';
-import { createLocalId } from '../features/sites/siteIds';
+import { toast } from 'react-toastify';
+import {
+    LuFileSpreadsheet, LuKeyboard, LuUpload, LuArrowLeft, LuArrowRight, LuPlus,
+    LuPencil, LuTrash2, LuArrowLeftRight, LuCheck, LuMapPin
+} from 'react-icons/lu';
 import useTripStore from '../store/useTripStore';
-import ManualSiteModal from '../components/ManualSiteModal';
+import { useAuth } from '../context/useAuth';
+import { useTeam } from '../context/useTeam';
+import {
+    ACCEPTED_FILE_TYPES, readSpreadsheet, guessColumnMapping, rowsToSites,
+    swapCoordinates, summarizeSites, isReadable
+} from '../features/import/spreadsheet';
+import { createTripWithSites, updateTrip } from '../features/trips/tripRepository';
+import { fetchTeamMembers } from '../features/team/teamRepository';
+import { statusAfterAssignment } from '../features/trips/tripStatus';
+import SiteFormDialog from '../components/trips/SiteFormDialog';
+import Button from '../components/ui/Button';
+import { Field, Input, Select } from '../components/ui/Field';
+import { Alert, Badge, Card, EmptyState, PageHeader, Skeleton } from '../components/ui/primitives';
+import { cn } from '../components/ui/cn';
 
-const STEPS = ['Title', 'Method', 'Source', 'Preview'];
+// Leaflet only downloads when the review step is reached
+const SitesPreviewMap = lazy(() => import('../components/trips/SitesPreviewMap'));
 
-// Parsed value when readable; otherwise the original cell text, so the user
-// can see what needs fixing instead of "NaN"
-const formatCoordinateCell = (value, raw) =>
-    Number.isFinite(value) ? value : <span className="text-danger">{String(raw ?? '') || '(empty)'}</span>;
+const STEPS = ['Add sites', 'Review', 'Save'];
 
-const StepHeader = ({ step }) => (
-    <div className="create-trip-stepper mb-4">
+const Stepper = ({ step }) => (
+    <ol className="mb-6 flex items-center gap-2 sm:mb-8" aria-label="Progress">
         {STEPS.map((label, index) => {
-            const num = index + 1;
-            const state = num < step ? 'done' : num === step ? 'active' : 'pending';
+            const state = index < step ? 'done' : index === step ? 'current' : 'todo';
             return (
-                <div key={label} className={`stepper-node is-${state}`}>
-                    <span className="stepper-dot">{state === 'done' ? <FaCheck size={11} /> : num}</span>
-                    <span className="stepper-label">{label}</span>
-                </div>
+                <li key={label} className="flex flex-1 items-center gap-2" aria-current={state === 'current' ? 'step' : undefined}>
+                    <span className={cn(
+                        'grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold',
+                        state === 'done' && 'bg-success text-white',
+                        state === 'current' && 'bg-accent text-accent-fg',
+                        state === 'todo' && 'bg-surface-2 text-faint'
+                    )}>
+                        {state === 'done' ? <LuCheck className="size-4" aria-hidden /> : index + 1}
+                    </span>
+                    <span className={cn('text-sm font-semibold', state === 'todo' ? 'text-faint' : 'text-fg', state !== 'current' && 'hidden sm:inline')}>
+                        {label}
+                    </span>
+                    {index < STEPS.length - 1 && <span className="h-px flex-1 bg-border" aria-hidden />}
+                </li>
             );
         })}
-    </div>
+    </ol>
 );
 
+const coordText = (value, raw) => (Number.isFinite(value) ? value.toFixed(5) : null) ?? (String(raw ?? '').trim() || '(empty)');
+
 const CreateTrip = () => {
-    const [fileData, setFileData] = useState([]);
-    const [headers, setHeaders] = useState([]);
-    const [mapping, setMapping] = useState({ name: '', lat: '', lng: '' });
-    const [tripTitle, setTripTitle] = useState('');
-    const [step, setStep] = useState(1); // 1: Title, 2: Choose Method, 3: Upload, 4: Map/Preview
-    const [previewSites, setPreviewSites] = useState([]);
-    const [showManualModal, setShowManualModal] = useState(false);
-
-    const fileInputRef = useRef();
     const navigate = useNavigate();
-    const { setSites, setCurrentTrip } = useTripStore();
+    const { user } = useAuth();
+    const { isManager } = useTeam();
+    const { currentTrip, sites, setCurrentTrip, setSites, loadTrip, clearStore } = useTripStore();
 
-    const handleFileUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    // Arriving with a *saved* trip in the store (e.g. a typed URL after using
+    // the map) must not offer to save it again: start a fresh draft instead.
+    // A staged draft (no id), e.g. after a refresh, resumes at review.
+    // Decided once, on arrival: after this page saves, the store DOES hold a
+    // saved trip (for the map), and clearing it then would break the hand-off.
+    const [hasSavedTrip] = useState(() => Boolean(currentTrip?.id));
+    useEffect(() => {
+        if (hasSavedTrip) clearStore();
+    }, [hasSavedTrip, clearStore]);
 
-        const extension = file.name.split('.').pop().toLowerCase();
+    const [step, setStep] = useState(() => (!hasSavedTrip && sites.length > 0 ? 1 : 0));
+    const [title, setTitle] = useState(hasSavedTrip ? '' : currentTrip?.title ?? '');
+    const [titleTouched, setTitleTouched] = useState(false);
 
-        if (extension === 'csv') {
-            Papa.parse(file, {
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => {
-                    setHeaders(Object.keys(results.data[0]));
-                    setFileData(results.data);
-                    setStep(4);
-                },
-                error: (err) => toast.error(`Error parsing CSV: ${err.message}`)
-            });
-        } else if (['xlsx', 'xls'].includes(extension)) {
-            const reader = new FileReader();
-            reader.onload = (evt) => {
-                const bstr = evt.target.result;
-                const wb = XLSX.read(bstr, { type: 'binary' });
-                const wsname = wb.SheetNames[0];
-                const ws = wb.Sheets[wsname];
-                const data = XLSX.utils.sheet_to_json(ws);
-                if (data.length > 0) {
-                    setHeaders(Object.keys(data[0]));
-                    setFileData(data);
-                    setStep(4);
-                } else {
-                    toast.error('File is empty');
-                }
-            };
-            reader.readAsBinaryString(file);
-        } else {
-            toast.error('Unsupported file format. Please upload CSV or Excel.');
+    const [file, setFile] = useState(null); // { name, headers, rows }
+    const [mapping, setMapping] = useState({ name: '', lat: '', lng: '' });
+    const [reading, setReading] = useState(false);
+    const [dragging, setDragging] = useState(false);
+
+    const [dialog, setDialog] = useState(null); // { site } | { site: null } for add
+    const [members, setMembers] = useState(null);
+    const [assignee, setAssignee] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const summary = summarizeSites(sites);
+    const titleError = titleTouched && !title.trim() ? 'Name the trip so your team can find it.' : null;
+
+    // The draft trip is just its title until saved; kept in the store so a
+    // refresh doesn't lose it
+    const persistTitle = (value) => {
+        setTitle(value);
+        setCurrentTrip({ title: value });
+    };
+
+    const handleFile = async (picked) => {
+        if (!picked) return;
+        try {
+            setReading(true);
+            const { headers, rows } = await readSpreadsheet(picked);
+            if (rows.length === 0) throw new Error('That file has no rows under its header line.');
+            setFile({ name: picked.name, headers, rows });
+            setMapping(guessColumnMapping(headers));
+        } catch (error) {
+            toast.error(error.message);
+        } finally {
+            setReading(false);
         }
     };
 
-    const handleAddManualSite = (newSite) => {
-        setPreviewSites([...previewSites, newSite]);
+    const requireTitle = () => {
+        setTitleTouched(true);
+        return Boolean(title.trim());
     };
 
-    const handleMapColumns = () => {
-        if (!mapping.name || !mapping.lat || !mapping.lng) {
-            return toast.warning('Please map all required columns');
-        }
-
-        const mapped = fileData.map((row, index) => {
-            const lat = parseCoordinate(row[mapping.lat]);
-            const lng = parseCoordinate(row[mapping.lng]);
-            const validation = validateCoordinates(lat, lng);
-
-            return {
-                id: createLocalId(),
-                name: row[mapping.name] || `Site ${index + 1}`,
-                latitude: lat,
-                longitude: lng,
-                // Original cell text, shown when it couldn't be read
-                rawLatitude: row[mapping.lat],
-                rawLongitude: row[mapping.lng],
-                isValid: validation.isValid,
-                error: validation.error,
-                isInverted: validation.isInverted,
-                is_checked: false,
-                notes: ''
-            };
-        });
-
-        setPreviewSites(mapped);
+    const importRows = () => {
+        if (!requireTitle()) return;
+        setSites(rowsToSites(file.rows, mapping));
+        setStep(1);
     };
 
-    const handleSwap = (id) => {
-        setPreviewSites(prev => prev.map(site => {
-            if (site.id === id) {
-                const newLat = site.longitude;
-                const newLng = site.latitude;
-                const validation = validateCoordinates(newLat, newLng);
-                return {
-                    ...site,
-                    latitude: newLat,
-                    longitude: newLng,
-                    isValid: validation.isValid,
-                    error: validation.error,
-                    isInverted: validation.isInverted
-                };
+    const startManual = () => {
+        if (!requireTitle()) return;
+        setStep(1);
+        if (sites.length === 0) setDialog({ site: null });
+    };
+
+    const upsertSite = (site) => {
+        const exists = sites.some((s) => s.id === site.id);
+        setSites(exists ? sites.map((s) => (s.id === site.id ? site : s)) : [...sites, site]);
+        setDialog(null);
+    };
+
+    const goToSave = async () => {
+        setStep(2);
+        if (isManager && members === null) {
+            try {
+                setMembers(await fetchTeamMembers());
+            } catch {
+                setMembers([]);
             }
-            return site;
-        }));
+        }
     };
 
-    const handleDelete = (id) => {
-        setPreviewSites(prev => prev.filter(site => site.id !== id));
+    const handleSave = async () => {
+        try {
+            setSaving(true);
+            // Single transaction: either the trip and every site are saved, or nothing is
+            let { trip, sites: savedSites } = await createTripWithSites(title.trim(), sites);
+            if (assignee) {
+                try {
+                    trip = await updateTrip(trip.id, { assigned_to: assignee, status: statusAfterAssignment(trip.status, assignee) });
+                } catch (error) {
+                    toast.warn(`Trip saved, but assigning it failed: ${error.message}`);
+                }
+            }
+            // Swap the staged copy for the persisted one so the map syncs edits
+            // against real database ids
+            loadTrip(trip, savedSites);
+            toast.success(`"${trip.title}" saved with ${savedSites.length} sites`);
+            navigate(`/map/${trip.id}`);
+        } catch (error) {
+            toast.error(`Couldn't save the trip: ${error.message}`);
+            setSaving(false);
+        }
     };
 
-    const handleFinalize = () => {
-        // Unreadable coordinates can't be saved or routed; only out-of-region
-        // ones may be kept on purpose
-        const unreadableCount = previewSites.filter(s => !isReadable(s)).length;
-        if (unreadableCount > 0) {
-            toast.error(`${unreadableCount} site(s) have coordinates that couldn't be read. Fix or delete them first.`);
-            return;
-        }
-
-        const invalidCount = previewSites.filter(s => !s.isValid).length;
-        if (invalidCount > 0) {
-            if (!window.confirm(`${invalidCount} sites have errors. Continue anyway?`)) return;
-        }
-
-        setCurrentTrip({ title: tripTitle, created_at: new Date() });
-        setSites(previewSites);
-        toast.success('Trip created successfully!');
-        navigate('/trip-details');
+    const startOver = () => {
+        clearStore();
+        setTitle('');
+        setFile(null);
+        setStep(0);
     };
 
     return (
-        <Container className="page-shell" style={{ maxWidth: '920px' }}>
-            <h1 className="fw-bold mb-1" style={{ color: 'var(--ink)' }}>Create New Trip</h1>
-            <p className="text-muted mb-4">Set up a new site verification run in a few steps.</p>
+        <div className="ui mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
+            <PageHeader title="New trip" description="Import or add your sites, check them on the map, then save." />
+            <Stepper step={step} />
 
-            <StepHeader step={step} />
+            {step === 0 && (
+                <div className="space-y-6">
+                    <Card className="p-5 sm:p-6">
+                        <Field label="Trip name" error={titleError} hint="e.g. Soweto WiFi audit, week 43">
+                            {(field) => (
+                                <Input
+                                    {...field}
+                                    value={title}
+                                    onChange={(e) => persistTitle(e.target.value)}
+                                    onBlur={() => setTitleTouched(true)}
+                                    autoFocus
+                                    autoComplete="off"
+                                />
+                            )}
+                        </Field>
+                    </Card>
 
-            {step === 1 && (
-                <Card className="border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
-                    <Card.Body className="p-4">
-                        <Form.Group className="mb-3">
-                            <Form.Label>Trip Title</Form.Label>
-                            <Form.Control
-                                type="text"
-                                placeholder="e.g. Cape Town Inspection Jan 2026"
-                                value={tripTitle}
-                                onChange={(e) => setTripTitle(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Button
-                            disabled={!tripTitle}
-                            onClick={() => setStep(2)}
-                        >
-                            Next: Select Entry Method
-                        </Button>
-                    </Card.Body>
-                </Card>
-            )}
-
-            {step === 2 && (
-                <Row className="g-3">
-                    <Col md={6}>
-                        <motion.div whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}>
-                            <Card
-                                className="h-100 text-center p-4 choice-card"
-                                onClick={() => setStep(3)}
-                                role="button"
+                    {!file ? (
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                            <label
+                                className={cn(
+                                    'flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed bg-surface px-6 py-10 text-center transition-colors duration-200',
+                                    dragging ? 'border-accent bg-accent-soft' : 'border-border-strong hover:border-accent'
+                                )}
+                                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                                onDragLeave={() => setDragging(false)}
+                                onDrop={(e) => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
                             >
-                                <Card.Body>
-                                    <span className="icon-chip is-lg mx-auto mb-3"><FaUpload /></span>
-                                    <h5 className="fw-bold" style={{ color: 'var(--ink)' }}>Upload File</h5>
-                                    <p className="text-muted small">Import sites from a CSV or Excel spreadsheet.</p>
-                                    <Button variant="outline-primary" size="sm">Choose File</Button>
-                                </Card.Body>
-                            </Card>
-                        </motion.div>
-                    </Col>
-                    <Col md={6}>
-                        <motion.div whileHover={{ y: -4 }} whileTap={{ scale: 0.98 }}>
-                            <Card
-                                className="h-100 text-center p-4 choice-card"
-                                onClick={() => { setStep(4); setPreviewSites([]); }}
-                                role="button"
+                                <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-accent">
+                                    <LuFileSpreadsheet className="size-6" aria-hidden />
+                                </span>
+                                <span className="mt-4 font-bold">Import a spreadsheet</span>
+                                <span className="mt-1 text-sm text-muted">Drop a CSV or Excel file here, or tap to choose one.</span>
+                                <span className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-accent-fg">
+                                    <LuUpload className="size-4" aria-hidden /> {reading ? 'Reading file...' : 'Choose file'}
+                                </span>
+                                <input
+                                    type="file"
+                                    accept={ACCEPTED_FILE_TYPES}
+                                    className="sr-only"
+                                    onChange={(e) => { handleFile(e.target.files[0]); e.target.value = ''; }}
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                onClick={startManual}
+                                className="flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-border bg-surface px-6 py-10 text-center shadow-card transition-colors duration-200 hover:border-accent"
                             >
-                                <Card.Body>
-                                    <span className="icon-chip is-lg mx-auto mb-3"><FaKeyboard /></span>
-                                    <h5 className="fw-bold" style={{ color: 'var(--ink)' }}>Manual Entry</h5>
-                                    <p className="text-muted small">Type in site names and coordinates one by one.</p>
-                                    <Button variant="outline-secondary" size="sm">Start Typing</Button>
-                                </Card.Body>
-                            </Card>
-                        </motion.div>
-                    </Col>
-                    <Col xs={12} className="text-center mt-2">
-                        <Button variant="link" onClick={() => setStep(1)}>Back</Button>
-                    </Col>
-                </Row>
-            )}
-
-            {step === 3 && (
-                <Card className="text-center p-5 border-dashed">
-                    <Card.Body>
-                        <span className="icon-chip is-lg mx-auto mb-3"><FaUpload /></span>
-                        <h5 className="fw-bold" style={{ color: 'var(--ink)' }}>Upload Coordinates</h5>
-                        <p className="text-muted">Upload a CSV or Excel file.</p>
-                        <input
-                            type="file"
-                            hidden
-                            ref={fileInputRef}
-                            accept=".csv, .xlsx, .xls"
-                            onChange={handleFileUpload}
-                        />
-                        <Button onClick={() => fileInputRef.current.click()}>
-                            Select File
-                        </Button>
-                        <div className="mt-3">
-                            <Button variant="link" onClick={() => setStep(2)}>Back</Button>
+                                <span className="grid size-12 place-items-center rounded-2xl bg-surface-2 text-muted">
+                                    <LuKeyboard className="size-6" aria-hidden />
+                                </span>
+                                <span className="mt-4 font-bold">Add sites by hand</span>
+                                <span className="mt-1 text-sm text-muted">Type or paste coordinates one site at a time.</span>
+                            </button>
                         </div>
-                    </Card.Body>
-                </Card>
-            )}
-
-            {step === 4 && (
-                <>
-                    {fileData.length > 0 && (
-                        <Card className="mb-4 border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
-                            <Card.Header className="bg-transparent fw-bold" style={{ color: 'var(--ink)' }}>Column Mapping</Card.Header>
-                            <Card.Body>
-                                <Row>
-                                    <Col md={4}>
-                                        <Form.Group className="mb-3">
-                                            <Form.Label>Site Name Column</Form.Label>
-                                            <Form.Select
-                                                value={mapping.name}
-                                                onChange={(e) => setMapping({...mapping, name: e.target.value})}
+                    ) : (
+                        <Card className="p-5 sm:p-6">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <h2 className="font-bold">Match your columns</h2>
+                                    <p className="mt-1 truncate text-sm text-muted">
+                                        {file.name} · {file.rows.length} rows. We guessed the columns; check them before continuing.
+                                    </p>
+                                </div>
+                                <Button variant="ghost" onClick={() => setFile(null)}>Choose another file</Button>
+                            </div>
+                            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+                                {[['name', 'Site name'], ['lat', 'Latitude'], ['lng', 'Longitude']].map(([key, label]) => (
+                                    <Field key={key} label={label}>
+                                        {(field) => (
+                                            <Select
+                                                {...field}
+                                                value={mapping[key]}
+                                                invalid={key !== 'name' && !mapping[key]}
+                                                onChange={(e) => setMapping({ ...mapping, [key]: e.target.value })}
                                             >
-                                                <option value="">Select Column...</option>
-                                                {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                                            </Form.Select>
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={4}>
-                                        <Form.Group className="mb-3">
-                                            <Form.Label>Latitude Column</Form.Label>
-                                            <Form.Select
-                                                value={mapping.lat}
-                                                onChange={(e) => setMapping({...mapping, lat: e.target.value})}
-                                            >
-                                                <option value="">Select Column...</option>
-                                                {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                                            </Form.Select>
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={4}>
-                                        <Form.Group className="mb-3">
-                                            <Form.Label>Longitude Column</Form.Label>
-                                            <Form.Select
-                                                value={mapping.lng}
-                                                onChange={(e) => setMapping({...mapping, lng: e.target.value})}
-                                            >
-                                                <option value="">Select Column...</option>
-                                                {headers.map(h => <option key={h} value={h}>{h}</option>)}
-                                            </Form.Select>
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-                                <Button onClick={handleMapColumns}>Preview Sites</Button>
-                            </Card.Body>
+                                                <option value="">{key === 'name' ? 'Number them (Site 1, 2...)' : 'Choose a column'}</option>
+                                                {file.headers.map((h) => <option key={h} value={h}>{h}</option>)}
+                                            </Select>
+                                        )}
+                                    </Field>
+                                ))}
+                            </div>
+                            <div className="mt-6 flex justify-end">
+                                <Button onClick={importRows} disabled={!mapping.lat || !mapping.lng || mapping.lat === mapping.lng}>
+                                    Import {file.rows.length} sites <LuArrowRight className="size-4" aria-hidden />
+                                </Button>
+                            </div>
                         </Card>
                     )}
 
-                    <Card className="border-0" style={{ boxShadow: 'var(--shadow-sm)' }}>
-                        <Card.Header className="bg-transparent d-flex justify-content-between align-items-center flex-wrap gap-2">
-                            <span className="fw-bold" style={{ color: 'var(--ink)' }}>Preview &amp; Validation ({previewSites.length} sites)</span>
-                            <div>
-                                <Button variant="outline-primary" size="sm" className="me-2" onClick={() => setShowManualModal(true)}>
-                                    <FaPlus className="me-1" /> Add Row
-                                </Button>
-                                <Button size="sm" onClick={handleFinalize} disabled={previewSites.length === 0}>Create Trip</Button>
-                            </div>
-                        </Card.Header>
-                        <Card.Body>
-                            {previewSites.length > 0 ? (
-                                <Table responsive hover className="align-middle">
-                                    <thead>
-                                        <tr>
-                                            <th>Site Name</th>
-                                            <th>Latitude</th>
-                                            <th>Longitude</th>
-                                            <th>Status</th>
-                                            <th>Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {previewSites.map((site) => (
-                                            <tr key={site.id}>
-                                                <td>{site.name}</td>
-                                                <td>{formatCoordinateCell(site.latitude, site.rawLatitude)}</td>
-                                                <td>{formatCoordinateCell(site.longitude, site.rawLongitude)}</td>
-                                                <td>
-                                                    {site.isValid ? (
-                                                        <span className="status-badge is-success">Ready</span>
-                                                    ) : (
-                                                        <span className="status-badge is-warning">
-                                                            <FaExclamationTriangle size={11} />
-                                                            {site.error}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td>
-                                                    <Button
-                                                        variant="outline-secondary"
-                                                        size="sm"
-                                                        className="me-2"
-                                                        onClick={() => handleSwap(site.id)}
-                                                        title="Swap Coordinates"
-                                                    >
-                                                        <FaExchangeAlt />
-                                                    </Button>
-                                                    <Button
-                                                        variant="outline-danger"
-                                                        size="sm"
-                                                        onClick={() => handleDelete(site.id)}
-                                                    >
-                                                        <FaTrash />
-                                                    </Button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </Table>
-                            ) : (
-                                <div className="text-center py-4 text-muted">
-                                    No sites added yet. {fileData.length === 0 ? "Click 'Add Row' to start." : "Complete the column mapping above."}
-                                </div>
-                            )}
-                        </Card.Body>
-                    </Card>
-                </>
+                    {sites.length > 0 && !file && (
+                        <Alert
+                            tone="info"
+                            title={`You have ${sites.length} sites from before`}
+                            action={<Button variant="secondary" onClick={() => setStep(1)}>Review them</Button>}
+                        >
+                            Importing a file replaces them.
+                        </Alert>
+                    )}
+                </div>
             )}
 
-            <ManualSiteModal
-                show={showManualModal}
-                onHide={() => setShowManualModal(false)}
-                onAdd={handleAddManualSite}
-            />
-        </Container>
+            {step === 1 && (
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone="neutral">{summary.total} sites</Badge>
+                        <Badge tone="success">{summary.ready} ready</Badge>
+                        {summary.outOfRegion > 0 && <Badge tone="warning">{summary.outOfRegion} outside South Africa</Badge>}
+                        {summary.unreadable > 0 && <Badge tone="danger">{summary.unreadable} unreadable</Badge>}
+                    </div>
+
+                    {sites.length > 0 && (
+                        <Card className="h-64 overflow-hidden sm:h-80">
+                            <Suspense fallback={<Skeleton className="h-full rounded-none" />}>
+                                <SitesPreviewMap sites={sites} />
+                            </Suspense>
+                        </Card>
+                    )}
+
+                    {summary.unreadable > 0 && (
+                        <Alert tone="danger" title="Some coordinates couldn't be read">
+                            Fix or remove the rows marked in red to continue. The original cell text is shown so you can see what's wrong.
+                        </Alert>
+                    )}
+
+                    {sites.length === 0 ? (
+                        <EmptyState
+                            icon={LuMapPin}
+                            title="No sites yet"
+                            action={<Button onClick={() => setDialog({ site: null })}><LuPlus className="size-4" aria-hidden /> Add a site</Button>}
+                        >
+                            Add the places this trip needs to visit.
+                        </EmptyState>
+                    ) : (
+                        <Card as="section" aria-label="Sites">
+                            <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+                                <h2 className="font-bold">Sites</h2>
+                                <Button variant="secondary" onClick={() => setDialog({ site: null })}>
+                                    <LuPlus className="size-4" aria-hidden /> Add site
+                                </Button>
+                            </div>
+                            <ul className="max-h-[28rem] divide-y divide-border overflow-y-auto">
+                                {sites.map((site, index) => {
+                                    const readable = isReadable(site);
+                                    return (
+                                        <li key={site.id} className="flex items-center gap-3 px-5 py-3">
+                                            <span className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-bold text-muted">
+                                                {index + 1}
+                                            </span>
+                                            <div className="min-w-0 flex-1">
+                                                <p className="truncate font-semibold">{site.name}</p>
+                                                <p className={cn('truncate font-mono text-xs', readable ? 'text-faint' : 'text-danger')}>
+                                                    {coordText(site.latitude, site.rawLatitude)}, {coordText(site.longitude, site.rawLongitude)}
+                                                </p>
+                                            </div>
+                                            {!readable ? (
+                                                <Badge tone="danger">Unreadable</Badge>
+                                            ) : site.isInverted ? (
+                                                <Button variant="secondary" size="sm" onClick={() => setSites(sites.map((s) => (s.id === site.id ? swapCoordinates(s) : s)))}>
+                                                    <LuArrowLeftRight className="size-4" aria-hidden /> Swap
+                                                </Button>
+                                            ) : !site.isValid ? (
+                                                <Badge tone="warning">Outside SA</Badge>
+                                            ) : null}
+                                            <Button variant="ghost" size="icon" aria-label={`Edit ${site.name}`} onClick={() => setDialog({ site })}>
+                                                <LuPencil className="size-4" />
+                                            </Button>
+                                            <Button variant="danger-ghost" size="icon" aria-label={`Remove ${site.name}`} onClick={() => setSites(sites.filter((s) => s.id !== site.id))}>
+                                                <LuTrash2 className="size-4" />
+                                            </Button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        </Card>
+                    )}
+
+                    <div className="flex items-center justify-between gap-3 pt-2">
+                        <Button variant="ghost" onClick={() => setStep(0)}>
+                            <LuArrowLeft className="size-4" aria-hidden /> Back
+                        </Button>
+                        <Button onClick={goToSave} disabled={sites.length === 0 || summary.unreadable > 0}>
+                            Continue <LuArrowRight className="size-4" aria-hidden />
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {step === 2 && (
+                <div className="space-y-4">
+                    <Card className="p-5 sm:p-6">
+                        <h2 className="text-lg font-bold">{title.trim()}</h2>
+                        <p className="mt-1 text-muted">{summary.total} sites, ready to optimize and drive.</p>
+                        {summary.outOfRegion > 0 && (
+                            <Alert tone="warning" className="mt-4" title={`${summary.outOfRegion} sites are outside South Africa`}>
+                                They'll be kept. Go back if they're mistakes.
+                            </Alert>
+                        )}
+                        {isManager && (
+                            <Field label="Assign to" hint="Optional. You can also assign it later from the dashboard." className="mt-5">
+                                {(field) => (
+                                    <Select {...field} value={assignee} onChange={(e) => setAssignee(e.target.value)} disabled={members === null}>
+                                        <option value="">Unassigned</option>
+                                        {(members ?? []).map((m) => (
+                                            <option key={m.user_id} value={m.user_id}>{m.user_id === user.id ? `${m.email} (you)` : m.email}</option>
+                                        ))}
+                                    </Select>
+                                )}
+                            </Field>
+                        )}
+                    </Card>
+                    <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                        <Button variant="ghost" onClick={() => setStep(1)} disabled={saving}>
+                            <LuArrowLeft className="size-4" aria-hidden /> Back
+                        </Button>
+                        <Button size="lg" onClick={handleSave} loading={saving}>
+                            {saving ? 'Saving...' : 'Save and open map'}
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {step > 0 && (
+                <p className="mt-8 text-center text-sm text-faint">
+                    Wrong file or starting over?{' '}
+                    <button type="button" onClick={startOver} className="cursor-pointer font-semibold text-accent hover:underline">
+                        Discard and start again
+                    </button>
+                </p>
+            )}
+
+            {dialog && (
+                <SiteFormDialog
+                    key={dialog.site?.id ?? 'new'}
+                    open
+                    onOpenChange={(open) => { if (!open) setDialog(null); }}
+                    site={dialog.site}
+                    onSubmit={upsertSite}
+                />
+            )}
+        </div>
     );
 };
 
