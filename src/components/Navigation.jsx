@@ -19,7 +19,7 @@ const Navigation = () => {
         }
     };
 
-    const isActive = (path) => location.pathname === path;
+    const isActive = (path) => location.pathname === path || location.pathname.startsWith(`${path}/`);
 
     return (
         <Navbar expand="lg" className="app-navbar" sticky="top">

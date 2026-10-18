@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import useTripStore from '../store/useTripStore';
 import { AuthContext } from './useAuth';
 
 export const AuthProvider = ({ children }) => {
@@ -7,19 +8,16 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check active sessions and sets the user
-        const getSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
+        // Single source of truth: onAuthStateChange fires INITIAL_SESSION on
+        // subscribe, so a separate getSession() call isn't needed. Having both
+        // let a slow getSession() overwrite a newer sign-in/sign-out.
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             setUser(session?.user ?? null);
             setLoading(false);
-        };
 
-        getSession();
-
-        // Listen for changes on auth state (logged in, signed out, etc.)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            setUser(session?.user ?? null);
-            setLoading(false);
+            // The active trip is persisted on the device; don't hand it to
+            // whoever signs in next on a shared phone
+            if (event === 'SIGNED_OUT') useTripStore.getState().clearStore();
         });
 
         return () => subscription.unsubscribe();

@@ -25,7 +25,7 @@ const statTileVariants = {
 const TripReview = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { setCurrentTrip, setSites } = useTripStore();
+    const { loadTrip } = useTripStore();
     const [trip, setTrip] = useState(null);
     const [sites, setSitesLocal] = useState([]);
     const [images, setImages] = useState([]);
@@ -85,14 +85,8 @@ const TripReview = () => {
     }, [id, navigate]);
 
     const handleResumeMap = () => {
-        const mappedSites = sites.map(s => ({
-            ...s,
-            isValid: true
-        }));
-
-        setCurrentTrip(trip);
-        setSites(mappedSites);
-        navigate('/map');
+        loadTrip(trip, sites);
+        navigate(`/map/${trip.id}`);
     };
 
     const handleDeleteImage = async (img) => {
