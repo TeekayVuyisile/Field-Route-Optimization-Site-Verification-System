@@ -1,35 +1,39 @@
 import { useState } from 'react';
-import { Form, Button, Alert, Spinner } from 'react-bootstrap';
-import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { FaRoute } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
+import { LuMailCheck } from 'react-icons/lu';
 import { useAuth } from '../context/useAuth';
-import AuthPanel from '../components/AuthPanel';
-import './Auth.css';
+import AuthLayout from '../components/layout/AuthLayout';
+import Button from '../components/ui/Button';
+import { Field, Input } from '../components/ui/Field';
+import { Alert } from '../components/ui/primitives';
+
+// Supabase Auth's default minimum
+const MIN_PASSWORD_LENGTH = 6;
 
 const Register = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [passwordConfirm, setPasswordConfirm] = useState('');
     const [error, setError] = useState(null);
+    const [mismatch, setMismatch] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [sentTo, setSentTo] = useState(null);
     const { signUp } = useAuth();
-    const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-
         if (password !== passwordConfirm) {
-            return setError('Passwords do not match');
+            setMismatch(true);
+            return;
         }
-
         try {
             setError(null);
             setLoading(true);
             const { error } = await signUp({ email, password });
             if (error) throw error;
-            alert('Registration successful! Please check your email for verification if enabled.');
-            navigate('/login');
+            // "Confirm email" is on: nothing works until the link is clicked,
+            // and that click is also what puts the user in their team
+            setSentTo(email);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -37,66 +41,78 @@ const Register = () => {
         }
     };
 
+    if (sentTo) {
+        return (
+            <AuthLayout eyebrow="Almost there" headline="One click and you're in.">
+                <span className="grid size-12 place-items-center rounded-2xl bg-success-soft text-success">
+                    <LuMailCheck className="size-6" aria-hidden />
+                </span>
+                <h2 className="mt-5 text-2xl font-bold tracking-tight">Check your inbox</h2>
+                <p className="mt-2 text-muted">
+                    We sent a confirmation link to <strong className="text-fg">{sentTo}</strong>. Open it on this
+                    device to activate your account. If a teammate invited this address, you'll join their team.
+                </p>
+                <Button to="/login" variant="secondary" size="lg" className="mt-6 w-full">Back to log in</Button>
+                <p className="mt-4 text-center text-sm text-faint">No email after a few minutes? Check your spam folder.</p>
+            </AuthLayout>
+        );
+    }
+
     return (
-        <div className="auth-shell">
-            <AuthPanel
-                tagline="Get started"
-                headline="Create an account to start optimizing trips."
-            />
-            <div className="auth-form-side">
-                <motion.div
-                    className="auth-form-card"
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                >
-                    <div className="auth-mobile-brand d-lg-none">
-                        <span className="brand-mark"><FaRoute /></span> RouteOps
-                    </div>
-                    <h2 className="auth-title">Register</h2>
-                    <p className="auth-subtitle">Set up your field operations account.</p>
+        <AuthLayout eyebrow="Get started" headline="Plan, drive and verify every site with your team.">
+            <h2 className="text-2xl font-bold tracking-tight">Create your account</h2>
+            <p className="mt-1 text-muted">Free to start. You'll confirm your email next.</p>
 
-                    {error && <Alert variant="danger">{error}</Alert>}
+            {error && <Alert tone="danger" className="mt-6">{error}</Alert>}
 
-                    <Form onSubmit={handleSubmit}>
-                        <Form.Group className="mb-3">
-                            <Form.Label>Email Address</Form.Label>
-                            <Form.Control
-                                type="email"
-                                required
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Form.Group className="mb-3">
-                            <Form.Label>Password</Form.Label>
-                            <Form.Control
-                                type="password"
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Form.Group className="mb-4">
-                            <Form.Label>Confirm Password</Form.Label>
-                            <Form.Control
-                                type="password"
-                                required
-                                value={passwordConfirm}
-                                onChange={(e) => setPasswordConfirm(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Button disabled={loading} className="w-100" type="submit" size="lg">
-                            {loading ? <Spinner size="sm" animation="border" className="me-2" /> : null}
-                            {loading ? 'Registering...' : 'Register'}
-                        </Button>
-                    </Form>
-                    <div className="auth-switch">
-                        Already have an account? <Link to="/login">Log In</Link>
-                    </div>
-                </motion.div>
-            </div>
-        </div>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                <Field label="Email address" hint="Use the address your team invited, if you have an invite.">
+                    {(field) => (
+                        <Input
+                            {...field}
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                    )}
+                </Field>
+                <Field label="Password" hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}>
+                    {(field) => (
+                        <Input
+                            {...field}
+                            type="password"
+                            autoComplete="new-password"
+                            required
+                            minLength={MIN_PASSWORD_LENGTH}
+                            value={password}
+                            onChange={(e) => { setPassword(e.target.value); setMismatch(false); }}
+                        />
+                    )}
+                </Field>
+                <Field label="Confirm password" error={mismatch ? "Passwords don't match." : null}>
+                    {(field) => (
+                        <Input
+                            {...field}
+                            type="password"
+                            autoComplete="new-password"
+                            required
+                            value={passwordConfirm}
+                            onChange={(e) => { setPasswordConfirm(e.target.value); setMismatch(false); }}
+                        />
+                    )}
+                </Field>
+                <Button type="submit" size="lg" className="w-full" loading={loading}>
+                    {loading ? 'Creating account...' : 'Create account'}
+                </Button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-muted">
+                Already have an account?{' '}
+                <Link to="/login" className="font-semibold text-accent hover:underline">Log in</Link>
+            </p>
+        </AuthLayout>
     );
 };
 

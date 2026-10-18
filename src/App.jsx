@@ -1,20 +1,25 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { TeamProvider } from './context/TeamContext';
-import Navigation from './components/Navigation';
+import AppShell from './components/layout/AppShell';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Register from './pages/Register';
-import Dashboard from './pages/Dashboard';
-import CreateTrip from './pages/CreateTrip';
-import TripDetails from './pages/TripDetails';
-import MapView from './pages/MapView';
-import TripReview from './pages/TripReview';
-import Team from './pages/Team';
+import { PageLoader } from './components/ui/Loaders';
 import { ToastContainer } from 'react-toastify';
 import './App.css';
+
+// Each page is its own chunk: the map (Leaflet), import (SheetJS) and review
+// (TanStack Table) code only downloads when that page is opened
+const Landing = lazy(() => import('./pages/Landing'));
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const CreateTrip = lazy(() => import('./pages/CreateTrip'));
+const TripDetails = lazy(() => import('./pages/TripDetails'));
+const MapView = lazy(() => import('./pages/MapView'));
+const TripReview = lazy(() => import('./pages/TripReview'));
+const Team = lazy(() => import('./pages/Team'));
 
 // Remount the map per trip so route/guidance state never carries over
 const TripMap = () => {
@@ -27,6 +32,7 @@ const AppRoutes = () => {
 
   return (
     <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<PageLoader />}>
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -88,6 +94,7 @@ const AppRoutes = () => {
           }
         />
       </Routes>
+      </Suspense>
     </ErrorBoundary>
   );
 };
@@ -97,8 +104,9 @@ function App() {
     <AuthProvider>
       <TeamProvider>
         <Router>
-          <Navigation />
-          <AppRoutes />
+          <AppShell>
+            <AppRoutes />
+          </AppShell>
           <ToastContainer position="bottom-right" />
         </Router>
       </TeamProvider>

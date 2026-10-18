@@ -1,5 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-
+/* Pre-Tailwind styles, kept in the legacy layer (below Tailwind) until this
+   page is migrated. See src/styles/app.css. */
+@layer legacy {
 /* ============================================================
    ROUTEOPS DESIGN TOKENS
    Deep Navy + Electric Blue system, layered on top of Bootstrap 5.
@@ -337,3 +338,4 @@ a:hover {
  * following the OS dark-mode preference. `color-scheme: light` (set at the
  * top of :root) tells the browser not to auto-darken form controls/scrollbars.
  */
+}
