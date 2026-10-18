@@ -5,6 +5,8 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
 
 const fetchTripWithSites = vi.fn();
+const renderTripPdf = vi.fn();
+vi.mock('../features/reports/renderTripPdf', () => ({ renderTripPdf: (...a) => renderTripPdf(...a) }));
 vi.mock('../features/trips/tripRepository', () => ({ fetchTripWithSites: (...a) => fetchTripWithSites(...a) }));
 const photoRepo = { fetchSitePhotos: vi.fn(), deleteSitePhoto: vi.fn(), downloadSitePhoto: vi.fn() };
 vi.mock('../features/sites/siteRepository', () => ({
@@ -111,11 +113,30 @@ describe('TripReview', () => {
             expect(this.download).toBe('Soweto-run-report.csv');
         });
         renderReport();
-        fireEvent.click(await screen.findByRole('button', { name: 'Export CSV' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Download CSV' }));
 
         expect(click).toHaveBeenCalled();
         const csv = await createObjectURL.mock.calls[0][0].text();
         expect(csv).toContain('1,"Alpha tower","Visited","Gate locked, used side entrance",-26.1,28,2');
+        click.mockRestore();
+    });
+
+    it('builds the PDF on demand and names it after the trip', async () => {
+        globalThis.URL.createObjectURL = vi.fn(() => 'blob:x');
+        globalThis.URL.revokeObjectURL = vi.fn();
+        const names = [];
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { names.push(this.download); });
+        renderTripPdf.mockImplementation(async ({ onProgress }) => {
+            onProgress(1, 2);
+            return { blob: new Blob(['%PDF']), missingPhotos: 1 };
+        });
+        const { toast } = await import('react-toastify');
+        renderReport();
+        fireEvent.click(await screen.findByRole('button', { name: 'Download PDF report' }));
+
+        await waitFor(() => expect(names).toEqual(['Soweto-run-report.pdf']));
+        expect(renderTripPdf).toHaveBeenCalledWith(expect.objectContaining({ trip: expect.objectContaining({ id: 't1' }), photos: PHOTOS }));
+        expect(toast.warn).toHaveBeenCalledWith(expect.stringMatching(/without 1 photo/));
         click.mockRestore();
     });
 

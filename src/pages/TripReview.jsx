@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { toast } from 'react-toastify';
-import { LuArrowLeft, LuCamera, LuDownload, LuFileWarning, LuMap, LuSearch } from 'react-icons/lu';
+import { LuArrowLeft, LuCamera, LuDownload, LuFileText, LuFileWarning, LuMap, LuSearch } from 'react-icons/lu';
 import useTripStore from '../store/useTripStore';
 import { fetchTripWithSites } from '../features/trips/tripRepository';
 import { fetchSitePhotos, deleteSitePhoto, downloadSitePhoto } from '../features/sites/siteRepository';
@@ -51,7 +51,8 @@ const CheckInLine = ({ site }) => {
 
 // The site's checklist answers, with unanswered required items called out
 const ChecklistAnswers = ({ checklist, site, photoCount }) => {
-    const missing = new Set(missingRequired(checklist, site.checklist_answers, photoCount).map((i) => i.id));
+    // Only a visited site can have skipped a required item
+    const missing = new Set(site.is_checked ? missingRequired(checklist, site.checklist_answers, photoCount).map((i) => i.id) : []);
     return (
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-lg bg-surface-2 p-2.5 text-sm">
             {checklist.items.map((item) => {
@@ -94,6 +95,7 @@ const TripReview = () => {
     const [filter, setFilter] = useState('all');
     const [sort, setSort] = useState('order');
     const [viewer, setViewer] = useState(null); // { siteId, index, key }
+    const [pdfProgress, setPdfProgress] = useState(null); // null, or { done, total } while building
 
     useEffect(() => {
         let cancelled = false;
@@ -162,6 +164,27 @@ const TripReview = () => {
         navigate(`/map/${trip.id}`);
     };
 
+    // The PDF code (a large library) only downloads when someone asks for one
+    const exportPdf = async () => {
+        setPdfProgress({ done: 0, total: 0 });
+        try {
+            const { renderTripPdf } = await import('../features/reports/renderTripPdf');
+            const { blob, missingPhotos } = await renderTripPdf({
+                trip, sites, photos,
+                onProgress: (done, total) => setPdfProgress({ done, total }),
+            });
+            saveBlob(blob, `${fileSlug(trip.title)}-report.pdf`);
+            if (missingPhotos > 0) {
+                toast.warn(`PDF saved without ${countLabel(missingPhotos, 'photo')} that couldn't be loaded. Try again with signal.`);
+            }
+        } catch (error) {
+            console.error('Building the PDF failed:', error);
+            toast.error("Couldn't build the PDF. Try again.");
+        } finally {
+            setPdfProgress(null);
+        }
+    };
+
     const exportCsv = () => {
         saveBlob(new Blob([buildTripCsv(sites, photos, trip.checklist)], { type: 'text/csv;charset=utf-8' }), `${fileSlug(trip.title)}-report.csv`);
     };
@@ -207,8 +230,20 @@ const TripReview = () => {
                 )}
                 actions={(
                     <>
-                        <Button variant="secondary" onClick={exportCsv} disabled={sites.length === 0}>
-                            <LuDownload className="size-4" aria-hidden /> Export CSV
+                        <Button variant="secondary" onClick={exportCsv} disabled={sites.length === 0} aria-label="Download CSV" title="Download CSV">
+                            <LuDownload className="size-4" aria-hidden /> CSV
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            onClick={exportPdf}
+                            loading={Boolean(pdfProgress)}
+                            disabled={sites.length === 0}
+                            aria-label="Download PDF report"
+                            title="Download PDF report"
+                        >
+                            {pdfProgress
+                                ? (pdfProgress.total ? `Photos ${pdfProgress.done}/${pdfProgress.total}` : 'Preparing')
+                                : <><LuFileText className="size-4" aria-hidden /> PDF</>}
                         </Button>
                         <Button onClick={openMap} disabled={sites.length === 0}>
                             <LuMap className="size-4" aria-hidden /> Open map
@@ -310,7 +345,9 @@ const TripReview = () => {
                                         <p className={cn('text-sm whitespace-pre-line', site.notes ? 'text-fg' : 'text-faint')}>
                                             {site.notes || 'No notes'}
                                         </p>
-                                        {trip.checklist && <ChecklistAnswers checklist={trip.checklist} site={site} photoCount={sitePhotos.length} />}
+                                        {trip.checklist && (site.is_checked || Object.keys(site.checklist_answers ?? {}).length > 0) && (
+                                            <ChecklistAnswers checklist={trip.checklist} site={site} photoCount={sitePhotos.length} />
+                                        )}
                                     </div>
                                     <div className="col-start-2 flex flex-wrap gap-2 lg:col-start-auto lg:justify-end">
                                         {sitePhotos.length === 0 ? (
