@@ -1,24 +1,28 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Container, Row, Col, Card, Button, ListGroup, Spinner, Form } from 'react-bootstrap';
-import { MapContainer, TileLayer, Marker, Popup, useMap, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, GeoJSON } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { AnimatePresence, motion } from 'framer-motion';
 import useTripStore from '../store/useTripStore';
 import { useNavigate } from 'react-router-dom';
-import { 
-    FaCheckCircle, FaRegCircle, FaRoute, FaSync, FaSave, 
-    FaVolumeUp, FaVolumeMute, FaLocationArrow, FaPlus, 
-    FaEdit, FaTrash, FaCrosshairs, FaCamera, FaImage 
+import {
+    FaRoute, FaVolumeUp, FaVolumeMute, FaLocationArrow, FaPlus,
+    FaEdit, FaTrash, FaCrosshairs, FaCamera
 } from 'react-icons/fa';
 import { getOptimizedRoute, getDirections } from '../services/orsService';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { toast } from 'react-toastify';
-import { speak, calculateDistance, isOffRoute } from '../utils/navigationUtils';
+import { speak, isOffRoute } from '../utils/navigationUtils';
 import ManualSiteModal from '../components/ManualSiteModal';
-import debounce from 'lodash/debounce';
+import { useGpsPosition } from '../features/navigation/useGpsPosition';
+import { evaluateGuidance, findNextSite, OFF_ROUTE_M, HEADS_UP_M } from '../features/navigation/guidance';
+import { useSiteSync } from '../features/sites/useSiteSync';
+import { isPersistedId } from '../features/sites/siteIds';
+import * as siteRepository from '../features/sites/siteRepository';
 import './MapView.css';
+
+const AUTO_REROUTE_COOLDOWN_MS = 30000;
 
 // Custom on-brand pin markers (CSS shapes, no external image requests).
 // Status keeps the same red/gold/green convention field users already know;
@@ -53,11 +57,14 @@ const userLocationIcon = L.divIcon({
     iconAnchor: [11, 11]
 });
 
-const RecenterAutomatically = ({ lat, lng }) => {
+// Keeps the map centred on the user while following. Dragging the map turns
+// following off, so the user can look around without it snapping back.
+const FollowUser = ({ pos, follow, onUserPan }) => {
     const map = useMap();
+    useMapEvents({ dragstart: onUserPan });
     useEffect(() => {
-        if (lat && lng) map.setView([lat, lng]);
-    }, [lat, lng]);
+        if (follow && pos) map.setView([pos.lat, pos.lng]);
+    }, [map, follow, pos]);
     return null;
 };
 
@@ -65,48 +72,10 @@ const MapView = () => {
     const { currentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
     const { user } = useAuth();
     const navigate = useNavigate();
-    const [userPos, setUserPos] = useState(null);
     const [routeData, setRouteData] = useState(null);
     const [isOptimizing, setIsOptimizing] = useState(false);
-    const [nextSite, setNextSite] = useState(null);
-    const [savingStatus, setSavingStatus] = useState('');
     const [voiceEnabled, setVoiceEnabled] = useState(false);
-    const [lastAnnouncedId, setLastAnnouncedId] = useState(null);
-    const [showSidebar, setShowSidebar] = useState(true);
-    
-    // REFS FOR STABILITY (Phase 1 Crash Fix)
-    const userPosRef = useRef(null);
-    const sitesRef = useRef([]);
-    const voiceEnabledRef = useRef(false);
-    const lastAnnouncedIdRef = useRef(null);
-    const nextSiteRef = useRef(null);
-    const lastRerouteTime = useRef(0);
-    const lastHeadsUpIdx = useRef(-1);
-    const lastArrivedIdx = useRef(-1);
-    const routeDataRef = useRef(null);
-    const currentStepIndexRef = useRef(0);
-    const navigationStepsRef = useRef([]);
-
-    // Keep refs in sync with state
-    useEffect(() => { userPosRef.current = userPos; }, [userPos]);
-    useEffect(() => { sitesRef.current = sites; }, [sites]);
-    useEffect(() => { voiceEnabledRef.current = voiceEnabled; }, [voiceEnabled]);
-    useEffect(() => { lastAnnouncedIdRef.current = lastAnnouncedId; }, [lastAnnouncedId]);
-    useEffect(() => { nextSiteRef.current = nextSite; }, [nextSite]);
-    useEffect(() => {
-        routeDataRef.current = routeData;
-        lastHeadsUpIdx.current = -1;
-        lastArrivedIdx.current = -1;
-    }, [routeData]);
-
-    // Stop any in-progress announcement the instant voice is muted, instead of
-    // only silencing future ones (a still-playing line kept talking through
-    // a mute tap otherwise).
-    useEffect(() => {
-        if (!voiceEnabled && 'speechSynthesis' in window) {
-            window.speechSynthesis.cancel();
-        }
-    }, [voiceEnabled]);
+    const [followUser, setFollowUser] = useState(true);
 
     // Site Modal States
     const [showModal, setShowModal] = useState(false);
@@ -116,114 +85,73 @@ const MapView = () => {
     const [navigationSteps, setNavigationSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
-    // Keep navigation refs in sync
-    useEffect(() => { 
-        navigationStepsRef.current = navigationSteps; 
-        currentStepIndexRef.current = currentStepIndex; 
-    }, [navigationSteps, currentStepIndex]);
-
     const [uploadingSites, setUploadingSites] = useState(new Set());
 
-    const refreshGPS = useCallback(() => {
-        if (!navigator.geolocation) {
-            toast.error("Geolocation is not supported by this browser.");
-            return;
-        }
+    // Guidance bookkeeping that must not trigger re-renders
+    const lastRerouteTime = useRef(0);
+    const lastAnnouncedIdRef = useRef(null);
+    const lastHeadsUpIdx = useRef(-1);
+    const lastArrivedIdx = useRef(-1);
 
-        toast.info("Acquiring high-accuracy GPS signal...");
-        
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {
-                const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                setUserPos(p);
-                toast.success("GPS Lock Acquired!");
-            },
-            (err) => {
-                console.error("GPS Error:", err);
-                if (err.code === 3) { // Timeout
-                    toast.warning("High-accuracy timed out. Trying standard GPS...");
-                    navigator.geolocation.getCurrentPosition(
-                        (pos) => {
-                            const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                            setUserPos(p);
-                            toast.success("GPS Location found (standard accuracy)");
-                        },
-                        (err2) => toast.error(`GPS Error: ${err2.message}`),
-                        { enableHighAccuracy: false, timeout: 10000 }
-                    );
-                } else {
-                    toast.error(`GPS Error: ${err.message}`);
-                }
-            },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-        );
-    }, []);
+    // Only highlight a "next stop" once there is an optimized route to follow
+    const nextSite = routeData ? findNextSite(sites) : null;
 
-    // Get an initial position as soon as the map loads, instead of waiting for
-    // the user to notice the Optimize button is disabled and go find the
-    // "Refresh GPS" button themselves. This uses the same fallback path as a
-    // manual refresh (no accuracy filter), so it works even on laptops/devices
-    // without a dedicated GPS chip.
-    useEffect(() => {
-        refreshGPS();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    const { status: savingStatus, queueSiteUpdate, flushSite } = useSiteSync();
 
-    // STABLE OPTIMIZATION FUNCTION (No state dependencies to prevent loop)
-    const optimizeRoute = useCallback(async (isAutoReroute = false, forcedPos = null) => {
-        const currentPos = forcedPos || userPosRef.current;
-        const currentSites = sitesRef.current;
-        const isVoiceOn = voiceEnabledRef.current;
-        
-        if (!currentPos || currentSites.length === 0) {
-            if (!isAutoReroute) {
-                toast.warn("Waiting for GPS lock before optimizing...");
-                refreshGPS();
-            }
-            return;
-        }
+    const applyRoute = (directions) => {
+        lastHeadsUpIdx.current = -1;
+        lastArrivedIdx.current = -1;
+        setRouteData(directions);
+
+        const allSteps = directions.features?.[0]?.properties?.segments?.flatMap(s => s.steps) ?? [];
+        setNavigationSteps(allSteps);
+        setCurrentStepIndex(0);
+        return allSteps;
+    };
+
+    const optimizeRoute = async (isAutoReroute, currentPos) => {
+        if (!currentPos || sites.length === 0) return;
 
         const now = Date.now();
-        if (isAutoReroute && now - lastRerouteTime.current < 30000) return;
+        if (isAutoReroute && now - lastRerouteTime.current < AUTO_REROUTE_COOLDOWN_MS) return;
         if (isAutoReroute) lastRerouteTime.current = now;
 
         try {
             setIsOptimizing(true);
-            const uncheckedSites = currentSites.filter(s => !s.is_checked);
-            
+            const uncheckedSites = sites.filter(s => !s.is_checked);
+
             if (uncheckedSites.length === 0) {
                 if (!isAutoReroute) toast.info("All sites checked!");
                 return;
             }
 
             const optimizedSites = await getOptimizedRoute(currentPos, uncheckedSites);
-            const checkedSites = currentSites.filter(s => s.is_checked);
-            setSites([...optimizedSites, ...checkedSites]);
-            
+
+            // Reorder the LATEST sites rather than the snapshot taken before the
+            // request, so edits made while optimizing (e.g. a check) aren't reverted.
+            const latest = useTripStore.getState().sites;
+            const byId = new Map(latest.map(s => [s.id, s]));
+            const optimizedIds = new Set(optimizedSites.map(s => s.id));
+            setSites([
+                ...optimizedSites.map(s => byId.get(s.id)).filter(Boolean),
+                ...latest.filter(s => !optimizedIds.has(s.id))
+            ]);
+
             const target = optimizedSites[0];
-            setNextSite(target);
-            
-            let routeCoords = [
+            const routeCoords = [
                 [currentPos.lng, currentPos.lat],
                 ...optimizedSites.map(s => [s.longitude, s.latitude])
             ];
 
-            const directionsResult = await getDirections(routeCoords);
-            setRouteData(directionsResult);
+            const allSteps = applyRoute(await getDirections(routeCoords));
 
-            if (directionsResult.features && directionsResult.features[0].properties.segments) {
-                const allSteps = directionsResult.features[0].properties.segments.flatMap(s => s.steps);
-                setNavigationSteps(allSteps);
-                setCurrentStepIndex(0);
-                
-                if (isVoiceOn && allSteps.length > 0) {
-                    const msg = isAutoReroute 
-                        ? `Off route. Recalculating. Next site: ${target.name}. ${allSteps[0].instruction}`
-                        : `Route optimized. First stop: ${target.name}. ${allSteps[0].instruction}`;
-                    speak(msg);
-                }
+            if (voiceEnabled && allSteps.length > 0) {
+                const msg = isAutoReroute
+                    ? `Off route. Recalculating. Next site: ${target.name}. ${allSteps[0].instruction}`
+                    : `Route optimized. First stop: ${target.name}. ${allSteps[0].instruction}`;
+                speak(msg);
             }
-            
+
             if (!isAutoReroute) toast.success("Route Optimized!");
         } catch (error) {
             console.error("Optimization error:", error);
@@ -235,125 +163,82 @@ const MapView = () => {
         } finally {
             setIsOptimizing(false);
         }
-    }, [setSites, refreshGPS]); // Extremely stable dependencies
+    };
 
-    // STABLE GPS WATCHER (Field-Grade Resilience)
-    useEffect(() => {
-        if (!navigator.geolocation) return;
+    // Called on every accepted GPS fix (see useGpsPosition); always sees the
+    // latest render's route, sites and settings.
+    const handleFix = (p) => {
+        const coords = routeData?.features?.[0]?.geometry?.coordinates ?? null;
 
-        const id = navigator.geolocation.watchPosition(
-            (pos) => {
-                const { latitude, longitude, accuracy } = pos.coords;
-                const p = { lat: latitude, lng: longitude };
+        if (coords && isOffRoute(p, coords, OFF_ROUTE_M)) {
+            optimizeRoute(true, p);
+        }
 
-                // 1. ACCURACY FILTER
-                // Real GPS chips (phones in a vehicle) easily beat 100m, but
-                // WiFi/IP-based positioning (laptops, indoors, no GPS chip)
-                // commonly reports 150-300m and would otherwise never pass
-                // this filter, silently freezing userPos forever with no
-                // feedback to the user (the actual bug reported: "Optimize"
-                // stuck disabled). 300m is still far tighter than the 500m
-                // teleportation check below.
-                if (accuracy > 300) return;
+        const { approachingSite, headsUp, arrive } = evaluateGuidance({
+            pos: p,
+            nextSite,
+            lastAnnouncedId: lastAnnouncedIdRef.current,
+            steps: navigationSteps,
+            stepIdx: currentStepIndex,
+            coords,
+            lastHeadsUpIdx: lastHeadsUpIdx.current,
+            lastArrivedIdx: lastArrivedIdx.current
+        });
 
-                // 2. TELEPORTATION FILTER
-                // Compare against userPosRef (not a private closure variable) so a
-                // manual "Refresh GPS" tap actually resets this filter's baseline
-                // instead of leaving it locked onto a stale position forever.
-                const lastPos = userPosRef.current;
-                if (lastPos) {
-                    const jumpDist = calculateDistance(lastPos.lat, lastPos.lng, p.lat, p.lng);
-                    if (jumpDist > 500) return;
-                    if (jumpDist < 5) return;
-                }
+        let spokeThisTick = false;
+        if (approachingSite && voiceEnabled) {
+            speak(`Approaching destination: ${approachingSite.name}`);
+            lastAnnouncedIdRef.current = approachingSite.id;
+            spokeThisTick = true;
+        }
+        if (headsUp) {
+            lastHeadsUpIdx.current = headsUp.index;
+            if (voiceEnabled && !spokeThisTick) speak(`In ${HEADS_UP_M} meters, ${headsUp.step.instruction}`);
+        }
+        if (arrive) {
+            lastArrivedIdx.current = arrive.index;
+            setCurrentStepIndex(arrive.index);
+            if (voiceEnabled && !spokeThisTick) speak(arrive.step.instruction);
+        }
+    };
 
-                setUserPos(p);
+    const { userPos, refreshGPS } = useGpsPosition(handleFix);
 
-                // Use REFS for logic to avoid effect restarts
-                const currentRoute = routeDataRef.current;
-                const activeNextSite = nextSiteRef.current;
-                const isVoiceOn = voiceEnabledRef.current;
-                const lastAnnounced = lastAnnouncedIdRef.current;
-                const steps = navigationStepsRef.current;
-                const stepIdx = currentStepIndexRef.current;
+    const handleOptimizeClick = () => {
+        if (!userPos) {
+            toast.warn("Waiting for GPS lock before optimizing...");
+            refreshGPS();
+            return;
+        }
+        optimizeRoute(false, userPos);
+    };
 
-                // 1. Check for Auto-Rerouting
-                if (currentRoute?.features?.[0]?.geometry?.coordinates) {
-                    const polyline = currentRoute.features[0].geometry.coordinates;
-                    if (isOffRoute(p, polyline, 150)) {
-                        optimizeRoute(true, p);
-                    }
-                }
-
-                // 2. Proximity Alert
-                let spokeThisTick = false;
-                if (activeNextSite && isVoiceOn && activeNextSite.id !== lastAnnounced) {
-                    const dist = calculateDistance(latitude, longitude, activeNextSite.latitude, activeNextSite.longitude);
-                    if (dist < 100) {
-                        speak(`Approaching destination: ${activeNextSite.name}`);
-                        setLastAnnouncedId(activeNextSite.id);
-                        spokeThisTick = true;
-                    }
-                }
-
-                // 3. Dynamic Turn-by-Turn Guidance
-                if (steps.length > 0 && stepIdx < steps.length - 1) {
-                    const nextStep = steps[stepIdx + 1];
-                    const coords = currentRoute.features[0].geometry.coordinates;
-                    const maneuverPointIdx = nextStep.way_points[0];
-                    const maneuverPoint = { lng: coords[maneuverPointIdx][0], lat: coords[maneuverPointIdx][1] };
-                    const distToTurn = calculateDistance(latitude, longitude, maneuverPoint.lat, maneuverPoint.lng);
-
-                    if (distToTurn < 150 && distToTurn > 40 && lastHeadsUpIdx.current !== stepIdx + 1) {
-                        if (isVoiceOn && !spokeThisTick) speak(`In 150 meters, ${nextStep.instruction}`);
-                        lastHeadsUpIdx.current = stepIdx + 1;
-                    }
-                    // Guarded the same way as the heads-up alert above: without
-                    // this check, every GPS tick while still within 30m kept
-                    // re-advancing the step index AND re-speaking the same
-                    // instruction 2-4+ times in a row (the reported "voice
-                    // guidance doesn't work properly" bug).
-                    if (distToTurn < 30 && lastArrivedIdx.current !== stepIdx + 1) {
-                        lastArrivedIdx.current = stepIdx + 1;
-                        setCurrentStepIndex(prev => prev + 1);
-                        if (isVoiceOn && !spokeThisTick) speak(`${nextStep.instruction}`);
-                    }
-                }
-            },
-            (err) => console.error("GPS Watch Error:", err),
-            { 
-                enableHighAccuracy: true, 
-                timeout: 30000,
-                maximumAge: 5000 
-            }
-        );
-
-        return () => navigator.geolocation.clearWatch(id);
-        // NO DEPENDENCIES here so the watch instance is STABLE
-    }, [optimizeRoute]); 
-
-    const debouncedSave = useCallback(
-        debounce(async (siteId, updates) => {
-            if (!siteId || siteId.length !== 36) return;
-            try {
-                setSavingStatus('Saving...');
-                const { error } = await supabase.from('sites').update(updates).eq('id', siteId);
-                if (error) throw error;
-                setSavingStatus('Saved');
-                setTimeout(() => setSavingStatus(''), 2000);
-            } catch (err) {
-                setSavingStatus('Save failed');
-            }
-        }, 2000),
-        []
-    );
+    const toggleVoice = () => {
+        const next = !voiceEnabled;
+        setVoiceEnabled(next);
+        if (next) {
+            // Speaking here, inside the real click, both confirms audibly that
+            // voice is on and "unlocks" speech synthesis on browsers (notably
+            // iOS Safari) that silently block speak() calls made later from an
+            // async callback with no user gesture in the stack.
+            speak('Voice guidance enabled');
+        } else if ('speechSynthesis' in window) {
+            // Stop a line that is still playing, not just future ones
+            window.speechSynthesis.cancel();
+        }
+    };
 
     const handleUpdateSite = (id, updates) => {
         const index = sites.findIndex(s => s.id === id);
         updateSite(index, updates);
-        if (typeof id === 'string' && id.length === 36) {
-            debouncedSave(id, updates);
-        }
+        if (isPersistedId(id)) queueSiteUpdate(id, updates);
+    };
+
+    // Checking is a deliberate action: save it (and any pending notes for the
+    // site) immediately rather than waiting for the debounce
+    const handleToggleChecked = (site) => {
+        handleUpdateSite(site.id, { is_checked: !site.is_checked });
+        if (isPersistedId(site.id)) flushSite(site.id);
     };
 
     const handleDeleteSite = async (id) => {
@@ -361,11 +246,9 @@ const MapView = () => {
         try {
             const index = sites.findIndex(s => s.id === id);
             removeSite(index);
-            if (typeof id === 'string' && id.length === 36) {
-                await supabase.from('sites').delete().eq('id', id);
-            }
+            if (isPersistedId(id)) await siteRepository.deleteSite(id);
             toast.success("Site excluded");
-        } catch (error) {
+        } catch {
             toast.error("Delete failed");
         }
     };
@@ -373,21 +256,13 @@ const MapView = () => {
     const handleAddSite = async (newSite) => {
         try {
             if (currentTrip?.id) {
-                const { data, error } = await supabase.from('sites').insert([{
-                    trip_id: currentTrip.id,
-                    name: newSite.name,
-                    latitude: newSite.latitude,
-                    longitude: newSite.longitude,
-                    order_index: sites.length,
-                    is_checked: false
-                }]).select().single();
-                if (error) throw error;
-                setSites([...sites, data]);
+                const saved = await siteRepository.insertSite(currentTrip.id, newSite, sites.length);
+                setSites([...sites, saved]);
             } else {
                 setSites([...sites, newSite]);
             }
             toast.success("Site added");
-        } catch (error) {
+        } catch {
             toast.error("Failed to add site");
         }
     };
@@ -396,52 +271,33 @@ const MapView = () => {
         try {
             const index = sites.findIndex(s => s.id === updatedSite.id);
             updateSite(index, updatedSite);
-            if (typeof updatedSite.id === 'string' && updatedSite.id.length === 36) {
-                const { error } = await supabase.from('sites').update({
+            if (isPersistedId(updatedSite.id)) {
+                await siteRepository.updateSite(updatedSite.id, {
                     name: updatedSite.name,
                     latitude: updatedSite.latitude,
                     longitude: updatedSite.longitude
-                }).eq('id', updatedSite.id);
-                if (error) throw error;
+                });
             }
             toast.success("Site updated");
-        } catch (error) {
+        } catch {
             toast.error("Update failed");
         }
     };
 
     const handleCapturePhoto = async (siteId, file) => {
-        if (!file || !user) {
+        if (!file) return;
+        if (!user) {
             toast.error("User session not found. Please log in again.");
             return;
         }
-        
+        if (!isPersistedId(siteId)) {
+            toast.error("Save the trip before adding photos.");
+            return;
+        }
+
         try {
             setUploadingSites(prev => new Set(prev).add(siteId));
-            
-            const fileExt = file.name.split('.').pop();
-            const fileName = `${siteId}/${Date.now()}.${fileExt}`;
-            const filePath = `${user.id}/${fileName}`;
-
-            // 1. Upload to Supabase Storage
-            const { error: uploadError } = await supabase.storage
-                .from('site-photos')
-                .upload(filePath, file);
-
-            if (uploadError) throw uploadError;
-
-            // 2. Record in site_images table (Critical: explicitly include user_id)
-            const { error: dbError } = await supabase
-                .from('site_images')
-                .insert([{
-                    site_id: siteId,
-                    user_id: user.id, // This matches the RLS policy
-                    storage_path: filePath,
-                    file_name: file.name
-                }]);
-
-            if (dbError) throw dbError;
-
+            await siteRepository.uploadSitePhoto({ userId: user.id, siteId, file });
             toast.success(`Photo synced!`);
         } catch (error) {
             console.error('Upload error details:', error);
@@ -544,23 +400,14 @@ const MapView = () => {
                         <Button
                             variant={voiceEnabled ? "primary" : "outline-secondary"}
                             className="toolbar-icon-btn"
-                            onClick={() => {
-                                const next = !voiceEnabled;
-                                setVoiceEnabled(next);
-                                // Speaking here, inside the real click, both confirms
-                                // audibly that voice is on and "unlocks" speech
-                                // synthesis on browsers (notably iOS Safari) that
-                                // silently block speak() calls made later from an
-                                // async callback with no user gesture in the stack.
-                                if (next) speak('Voice guidance enabled');
-                            }}
+                            onClick={toggleVoice}
                             title={voiceEnabled ? "Disable voice guidance" : "Enable voice guidance"}
                             aria-label={voiceEnabled ? "Disable voice guidance" : "Enable voice guidance"}
                         >
                             {voiceEnabled ? <FaVolumeUp /> : <FaVolumeMute />}
                         </Button>
                     </motion.span>
-                    <Button variant="primary" className="rounded-pill px-4" onClick={() => optimizeRoute()} disabled={isOptimizing || !userPos}>
+                    <Button variant="primary" className="rounded-pill px-4" onClick={handleOptimizeClick} disabled={isOptimizing || !userPos}>
                         {isOptimizing ? <Spinner size="sm" /> : <FaRoute className="me-2" />}
                         Optimize
                     </Button>
@@ -598,35 +445,36 @@ const MapView = () => {
                                                         <Spinner size="sm" animation="border" variant="primary" className="me-2" />
                                                     ) : (
                                                         <div className="position-relative me-2" style={{ width: '20px', height: '20px' }}>
-                                                            <input 
-                                                                type="file" 
-                                                                accept="image/*" 
+                                                            <input
+                                                                type="file"
+                                                                accept="image/*"
                                                                 capture="environment"
                                                                 className="position-absolute opacity-0 w-100 h-100 cursor-pointer"
                                                                 style={{ zIndex: 10, top: 0, left: 0 }}
+                                                                aria-label={`Add photo for ${site.name}`}
                                                                 onChange={(e) => handleCapturePhoto(site.id, e.target.files[0])}
                                                             />
                                                             <FaCamera size={16} className="text-primary" />
                                                         </div>
                                                     )}
-                                                    <Button variant="link" size="sm" className="p-0 me-2" onClick={() => { setEditSiteData(site); setShowModal(true); }}>
+                                                    <Button variant="link" size="sm" className="p-0 me-2" aria-label={`Edit ${site.name}`} onClick={() => { setEditSiteData(site); setShowModal(true); }}>
                                                         <FaEdit />
                                                     </Button>
-                                                    <Button variant="link" size="sm" className="text-danger p-0" onClick={() => handleDeleteSite(site.id)}>
+                                                    <Button variant="link" size="sm" className="text-danger p-0" aria-label={`Delete ${site.name}`} onClick={() => handleDeleteSite(site.id)}>
                                                         <FaTrash />
                                                     </Button>
                                                 </div>
                                             </div>
                                             <Form.Group className="mb-2">
-                                                <Form.Control 
+                                                <Form.Control
                                                     as="textarea" rows={2} size="sm" placeholder="Notes..."
                                                     value={site.notes || ''}
                                                     onChange={(e) => handleUpdateSite(site.id, { notes: e.target.value })}
                                                 />
                                             </Form.Group>
-                                            <Button 
+                                            <Button
                                                 size="sm" variant={site.is_checked ? "warning" : "success"} className="w-100"
-                                                onClick={() => handleUpdateSite(site.id, { is_checked: !site.is_checked })}
+                                                onClick={() => handleToggleChecked(site)}
                                             >
                                                 {site.is_checked ? 'Uncheck' : 'Check'}
                                             </Button>
@@ -634,45 +482,54 @@ const MapView = () => {
                                     </Popup>
                                 </Marker>
                             ))}
-                            {userPos && <RecenterAutomatically lat={userPos.lat} lng={userPos.lng} />}
+                            <FollowUser pos={userPos} follow={followUser} onUserPan={() => setFollowUser(false)} />
                         </MapContainer>
+                        {!followUser && userPos && (
+                            <Button
+                                variant="light"
+                                className="map-recenter-btn"
+                                onClick={() => setFollowUser(true)}
+                                title="Follow my location"
+                                aria-label="Follow my location"
+                            >
+                                <FaLocationArrow />
+                            </Button>
+                        )}
                     </div>
                 </Col>
 
-                {showSidebar && (
-                    <Col md={4} lg={3}>
-                        <Card className="site-sidebar border-0 ms-md-3" style={{ boxShadow: 'var(--shadow-sm)' }}>
-                            <Card.Header className="bg-white py-3 d-flex justify-content-between">
-                                <h5 className="mb-0 fw-bold" style={{ color: 'var(--ink)' }}>Route</h5>
-                                <span className="status-badge is-accent">{sites.filter(s => s.is_checked).length}/{sites.length}</span>
-                            </Card.Header>
-                            <ListGroup variant="flush" className="overflow-auto" style={{ height: 'calc(100vh - 250px)' }}>
-                                {sites.map((site, index) => (
-                                    <ListGroup.Item key={site.id} className={site.id === nextSite?.id ? 'is-next-stop' : ''}>
-                                        <div className="d-flex justify-content-between align-items-center">
-                                            <div className="text-truncate d-flex align-items-center">
-                                                <span className={`site-order-dot ${site.is_checked ? 'is-checked' : site.id === nextSite?.id ? 'is-next' : ''}`}>{index + 1}</span>
-                                                <span className={site.is_checked ? 'text-muted text-decoration-line-through' : 'fw-bold'} style={{ color: site.is_checked ? undefined : 'var(--ink)' }}>{site.name}</span>
-                                            </div>
-                                            <div className="d-flex">
-                                                <Button variant="link" size="sm" className="p-0 me-2" onClick={() => { setEditSiteData(site); setShowModal(true); }}>
-                                                    <FaEdit />
-                                                </Button>
-                                                <Button variant="link" size="sm" className="text-danger p-0" onClick={() => handleDeleteSite(site.id)}>
-                                                    <FaTrash />
-                                                </Button>
-                                            </div>
+                <Col md={4} lg={3}>
+                    <Card className="site-sidebar border-0 ms-md-3" style={{ boxShadow: 'var(--shadow-sm)' }}>
+                        <Card.Header className="bg-white py-3 d-flex justify-content-between">
+                            <h5 className="mb-0 fw-bold" style={{ color: 'var(--ink)' }}>Route</h5>
+                            <span className="status-badge is-accent">{sites.filter(s => s.is_checked).length}/{sites.length}</span>
+                        </Card.Header>
+                        <ListGroup variant="flush" className="overflow-auto" style={{ height: 'calc(100vh - 250px)' }}>
+                            {sites.map((site, index) => (
+                                <ListGroup.Item key={site.id} className={site.id === nextSite?.id ? 'is-next-stop' : ''}>
+                                    <div className="d-flex justify-content-between align-items-center">
+                                        <div className="text-truncate d-flex align-items-center">
+                                            <span className={`site-order-dot ${site.is_checked ? 'is-checked' : site.id === nextSite?.id ? 'is-next' : ''}`}>{index + 1}</span>
+                                            <span className={site.is_checked ? 'text-muted text-decoration-line-through' : 'fw-bold'} style={{ color: site.is_checked ? undefined : 'var(--ink)' }}>{site.name}</span>
                                         </div>
-                                    </ListGroup.Item>
-                                ))}
-                            </ListGroup>
-                        </Card>
-                    </Col>
-                )}
+                                        <div className="d-flex">
+                                            <Button variant="link" size="sm" className="p-0 me-2" aria-label={`Edit ${site.name}`} onClick={() => { setEditSiteData(site); setShowModal(true); }}>
+                                                <FaEdit />
+                                            </Button>
+                                            <Button variant="link" size="sm" className="text-danger p-0" aria-label={`Delete ${site.name}`} onClick={() => handleDeleteSite(site.id)}>
+                                                <FaTrash />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </ListGroup.Item>
+                            ))}
+                        </ListGroup>
+                    </Card>
+                </Col>
             </Row>
-            
-            <ManualSiteModal 
-                show={showModal} onHide={() => setShowModal(false)} 
+
+            <ManualSiteModal
+                show={showModal} onHide={() => setShowModal(false)}
                 onAdd={handleAddSite} onSave={handleSaveEdit} editData={editSiteData}
             />
         </Container>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Form, Row, Col } from 'react-bootstrap';
 import { useForm } from 'react-hook-form';
 import { validateCoordinates } from '../utils/validation';
+import { createLocalId } from '../features/sites/siteIds';
 
 const ManualSiteModal = ({ show, onHide, onAdd, onSave, editData }) => {
     const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm();
@@ -25,7 +26,7 @@ const ManualSiteModal = ({ show, onHide, onAdd, onSave, editData }) => {
         }
 
         const siteData = {
-            id: editData ? editData.id : crypto.randomUUID(),
+            id: editData ? editData.id : createLocalId(),
             name: data.name,
             latitude: parseFloat(data.latitude),
             longitude: parseFloat(data.longitude),

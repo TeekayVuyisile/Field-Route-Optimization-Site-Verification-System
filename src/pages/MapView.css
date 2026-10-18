@@ -7,6 +7,25 @@
     border: 1px solid var(--border);
 }
 
+/* Shown once the user pans away; restores follow-my-location */
+.map-recenter-btn {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 1000; /* above Leaflet panes */
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50% !important;
+    color: var(--accent);
+    background: var(--surface-card);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+}
+
 .leaflet-container {
     height: 100%;
     width: 100%;

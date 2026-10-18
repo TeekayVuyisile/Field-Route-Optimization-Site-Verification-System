@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Container, Button, Row, Col, Card, Badge } from 'react-bootstrap';
 import { motion } from 'framer-motion';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../context/useAuth';
 import { FaPlus, FaRoute, FaCalendarAlt, FaTrash, FaMapMarkedAlt } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
@@ -27,26 +27,26 @@ const Dashboard = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        if (!user) return;
+
+        const fetchTrips = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('trips')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (error) throw error;
+                setTrips(data || []);
+            } catch (error) {
+                console.error('Error fetching trips:', error.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+
         fetchTrips();
     }, [user]);
-
-    const fetchTrips = async () => {
-        if (!user) return;
-        try {
-            setLoading(true);
-            const { data, error } = await supabase
-                .from('trips')
-                .select('*')
-                .order('created_at', { ascending: false });
-
-            if (error) throw error;
-            setTrips(data || []);
-        } catch (error) {
-            console.error('Error fetching trips:', error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const handleResumeTrip = async (trip) => {
         try {
@@ -66,7 +66,7 @@ const Dashboard = () => {
             setCurrentTrip(trip);
             setSites(mappedSites);
             navigate('/map');
-        } catch (error) {
+        } catch {
             toast.error("Failed to load trip sites");
         }
     };
@@ -84,7 +84,7 @@ const Dashboard = () => {
             if (error) throw error;
             setTrips(trips.filter(t => t.id !== tripId));
             toast.success("Trip deleted");
-        } catch (error) {
+        } catch {
             toast.error("Failed to delete trip");
         }
     };
