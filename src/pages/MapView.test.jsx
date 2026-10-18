@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
@@ -50,6 +50,7 @@ vi.mock('../features/trips/tripRepository', () => ({
 }));
 
 const { default: MapView } = await import('./MapView');
+const { toast } = await import('react-toastify');
 const { default: useTripStore } = await import('../store/useTripStore');
 
 const SITES = [
@@ -177,6 +178,37 @@ describe('MapView (driver mode)', () => {
         renderMap();
         expect(screen.getByRole('button', { name: 'Optimize' })).toBeDisabled();
         expect(screen.getByText('Finding your location...')).toBeInTheDocument();
+    });
+
+    it('queues a photo through the outbox and uploads it with a repeat-safe id', async () => {
+        renderMap();
+        const photo = new File(['jpeg'], 'IMG_2041.jpg', { type: 'image/jpeg' });
+        fireEvent.change(screen.getByLabelText('Add photo for Alpha'), { target: { files: [photo] } });
+
+        await waitFor(() => expect(siteRepo.uploadSitePhoto).toHaveBeenCalled());
+        expect(siteRepo.uploadSitePhoto.mock.calls[0][0]).toMatchObject({
+            id: expect.any(String), userId: 'me', siteId: 's1', fileName: 'IMG_2041.jpg',
+        });
+    });
+
+    describe('offline', () => {
+        beforeEach(() => Object.defineProperty(navigator, 'onLine', { value: false, configurable: true }));
+        afterEach(() => Object.defineProperty(navigator, 'onLine', { value: true, configurable: true }));
+
+        it('says changes are kept on the phone, and needs signal to add a site', async () => {
+            renderMap();
+            expect(screen.getByText(/Offline, saving on this phone/)).toBeInTheDocument();
+
+            fireEvent.click(screen.getByRole('button', { name: 'Add a site' }));
+            const dialog = await screen.findByRole('dialog', { name: 'Add a site' });
+            fireEvent.change(within(dialog).getByLabelText('Site name'), { target: { value: 'Delta' } });
+            fireEvent.change(within(dialog).getByLabelText('Latitude'), { target: { value: '-26.4' } });
+            fireEvent.change(within(dialog).getByLabelText('Longitude'), { target: { value: '28.3' } });
+            fireEvent.click(within(dialog).getByRole('button', { name: 'Add site' }));
+
+            expect(siteRepo.insertSite).not.toHaveBeenCalled();
+            expect(toast.warn).toHaveBeenCalledWith(expect.stringMatching(/offline/i));
+        });
     });
 
     it('offers the report once every stop is visited', () => {

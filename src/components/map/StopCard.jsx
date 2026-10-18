@@ -1,10 +1,10 @@
 import { useId, useState } from 'react';
-import { LuCamera, LuCheck, LuNavigation, LuNotebookPen, LuPencil, LuTrash2, LuUndo2 } from 'react-icons/lu';
+import { LuCamera, LuCheck, LuCloudUpload, LuNavigation, LuNotebookPen, LuPencil, LuTrash2, LuUndo2 } from 'react-icons/lu';
 import Button from '../ui/Button';
 import Spinner from '../ui/Spinner';
 import { Badge } from '../ui/primitives';
 import { cn } from '../ui/cn';
-import { formatDistance } from '../../lib/format';
+import { countLabel, formatDistance } from '../../lib/format';
 
 const tile = 'flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-border bg-surface text-xs font-semibold text-fg transition-colors duration-200 hover:bg-surface-2';
 
@@ -16,7 +16,7 @@ const directionsUrl = (site) =>
  * The selected stop (the next one by default) with the actions a driver
  * needs on arrival. Big targets: this is used one-handed, often in a car.
  */
-const StopCard = ({ site, number, total, isNext, distance, uploading, onToggleChecked, onPhoto, onNotesChange, onEdit, onDelete }) => {
+const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, queuedPhotos = 0, onToggleChecked, onPhoto, onNotesChange, onEdit, onDelete }) => {
     // Render with key={site.id}: notes start open when the site has some
     const [showNotes, setShowNotes] = useState(() => Boolean(site.notes));
     const notesId = useId();
@@ -51,16 +51,16 @@ const StopCard = ({ site, number, total, isNext, distance, uploading, onToggleCh
                 <a href={directionsUrl(site)} target="_blank" rel="noopener noreferrer" className={tile}>
                     <LuNavigation className="size-5 text-accent" aria-hidden /> Navigate
                 </a>
-                <label className={cn(tile, 'focus-within:ring-4 focus-within:ring-accent-soft', uploading && 'pointer-events-none opacity-60')}>
-                    {uploading ? <Spinner className="size-5" label="Uploading photo" /> : <LuCamera className="size-5 text-accent" aria-hidden />}
-                    {uploading ? 'Uploading' : 'Photo'}
+                <label className={cn(tile, 'focus-within:ring-4 focus-within:ring-accent-soft', preparingPhoto && 'pointer-events-none opacity-60')}>
+                    {preparingPhoto ? <Spinner className="size-5" label="Saving photo" /> : <LuCamera className="size-5 text-accent" aria-hidden />}
+                    {preparingPhoto ? 'Saving' : 'Photo'}
                     <input
                         type="file"
                         accept="image/*"
                         capture="environment"
                         className="sr-only"
                         aria-label={`Add photo for ${site.name}`}
-                        disabled={uploading}
+                        disabled={preparingPhoto}
                         onChange={(e) => { onPhoto(e.target.files[0]); e.target.value = ''; }}
                     />
                 </label>
@@ -74,6 +74,13 @@ const StopCard = ({ site, number, total, isNext, distance, uploading, onToggleCh
                     <LuNotebookPen className="size-5 text-accent" aria-hidden /> Notes
                 </button>
             </div>
+
+            {queuedPhotos > 0 && (
+                <p className="flex items-center gap-2 text-sm text-muted" role="status">
+                    <LuCloudUpload className="size-4 text-accent" aria-hidden />
+                    {countLabel(queuedPhotos, 'photo')} waiting to upload
+                </p>
+            )}
 
             {showNotes && (
                 <textarea

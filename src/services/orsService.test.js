@@ -56,6 +56,14 @@ describe('routing API calls', () => {
             expect(fetchMock).not.toHaveBeenCalled();
         });
 
+        it('orders stops locally without a request when the phone is offline', async () => {
+            vi.stubGlobal('navigator', { onLine: false });
+            const ordered = await getOptimizedRoute({ lat: -26, lng: 28 }, sites);
+            expect(ordered.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+            expect(fetchMock).not.toHaveBeenCalled();
+            await expect(getDirections([[28, -26], [28.1, -26]])).rejects.toMatchObject({ status: 0 });
+        });
+
         it('uses the local fallback (no network) above the 70-job ORS limit', async () => {
             const many = Array.from({ length: 71 }, (_, i) => site(`s${i}`, -26, 28 + i * 0.01));
             const ordered = await getOptimizedRoute({ lat: -26, lng: 28 }, many);

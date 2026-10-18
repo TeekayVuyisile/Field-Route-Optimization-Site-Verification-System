@@ -33,6 +33,9 @@ const retryWaitMs = (response, attempt) => {
  * are retried with backoff (honouring Retry-After); other errors throw.
  */
 const callRoutingApi = async (endpoint, body) => {
+    // No signal: fail at once (status 0 = unreachable) so callers fall back to
+    // the local order and straight lines, instead of waiting on retries
+    if (navigator.onLine === false) throw new RoutingError('Offline', 0);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new RoutingError('Sign in required', 401);
 

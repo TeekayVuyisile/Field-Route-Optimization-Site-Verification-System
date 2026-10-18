@@ -50,19 +50,35 @@ export const getSignedPhotoUrls = async (storagePaths) => {
     );
 };
 
+const fileExtension = (file, fileName) =>
+    (file.type === 'image/jpeg' ? 'jpg' : (fileName ?? file.name ?? '').split('.').pop() || 'jpg').toLowerCase();
+
+// Storage answers a second upload to the same path with 409 Duplicate
+const isAlreadyStored = (error) => String(error?.statusCode) === '409' || /already exists|duplicate/i.test(error?.message ?? '');
+
 /**
  * Upload a photo to the `site-photos` bucket and record it in `site_images`.
+ * Safe to run again with the same `id` (the outbox retries after a lost
+ * response): the file path comes from the id, an existing file is accepted
+ * and the record is only inserted once.
  * The path MUST start with the user's id: storage RLS policies key off the
  * first path segment matching auth.uid().
  */
-export const uploadSitePhoto = async ({ userId, siteId, file }) => {
-    const fileExt = file.name.split('.').pop();
-    const filePath = `${userId}/${siteId}/${Date.now()}.${fileExt}`;
+export const uploadSitePhoto = async ({ id, userId, siteId, file, fileName }) => {
+    const filePath = `${userId}/${siteId}/${id}.${fileExtension(file, fileName)}`;
 
     const { error: uploadError } = await supabase.storage
         .from('site-photos')
-        .upload(filePath, file);
-    if (uploadError) throw uploadError;
+        .upload(filePath, file, { contentType: file.type || 'image/jpeg' });
+    if (uploadError && !isAlreadyStored(uploadError)) throw uploadError;
+
+    const { data: existing, error: lookupError } = await supabase
+        .from('site_images')
+        .select('id')
+        .eq('storage_path', filePath)
+        .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (existing) return filePath;
 
     // user_id must be explicit to satisfy the site_images RLS policy
     const { error: dbError } = await supabase
@@ -71,7 +87,7 @@ export const uploadSitePhoto = async ({ userId, siteId, file }) => {
             site_id: siteId,
             user_id: userId,
             storage_path: filePath,
-            file_name: file.name
+            file_name: fileName ?? file.name ?? `${id}.jpg`
         }]);
     if (dbError) throw dbError;
 
