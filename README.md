@@ -1,207 +1,215 @@
-# Field Route Optimization & Site Verification System 
+# RouteOps: Field Route Optimization & Site Verification
 
-## Professional Field Operations & Compliance System
+**Plan smarter routes. Verify every site.** RouteOps is a mobile-first web app for field teams: import a list of sites, get the fastest visiting order, drive it with turn-by-turn voice guidance, and prove every visit with GPS-verified check-ins, checklists and photos, even without signal.
 
-**[Try the live demo](https://field-route-optimization-site-verif.vercel.app/)**: press *Try the live demo* for a private sandbox (no sign-up) with sample trips, a manager and a field agent account you can switch between, flagged check-ins and checklists. Each sandbox is deleted after 24 hours.
+[![CI](https://github.com/TeekayVuyisile/Field-Route-Optimization-Site-Verification-System/actions/workflows/ci.yml/badge.svg)](https://github.com/TeekayVuyisile/Field-Route-Optimization-Site-Verification-System/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-2563EB.svg)](LICENSE)
+[![Live demo](https://img.shields.io/badge/demo-live-047857.svg)](https://field-route-optimization-site-verif.vercel.app/)
 
----
+### [Try the live demo](https://field-route-optimization-site-verif.vercel.app/)
 
-# 1. Project Overview
+Press **Try the live demo**: no sign-up. You get a private sandbox team with sample trips around Johannesburg and Pretoria, a **manager** and a **field agent** account you can switch between, flagged check-ins and a site checklist. Each sandbox is deleted after 24 hours, and nothing you do is visible to anyone else.
 
-A professional-grade web application designed for field teams to manage complex site verification trips. The system handles the entire lifecycle from coordinate import to final evidence-based reporting.
-
-**Primary use cases:**
-* WiFi & Telecom site verification
-* Infrastructure inspections (Power, Water, Road)
-* Environmental site audits
-* Logistics & dynamic route planning
+![Driver mode: turn-by-turn guidance, the next stop and its checklist](docs/screenshots/driver-map.png)
 
 ---
 
-# 2. Key Professional Features
+## Contents
 
-| Feature | Description |
+- [Screenshots](#screenshots)
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Tech stack](#tech-stack)
+- [Security model](#security-model)
+- [Getting started](#getting-started)
+- [Deployment](#deployment)
+- [Project structure](#project-structure)
+- [License](#license)
+
+## Screenshots
+
+| Landing page | Team trips (manager) |
+| :---: | :---: |
+| ![Landing page](docs/screenshots/landing.png) | ![Dashboard with team trips and progress](docs/screenshots/dashboard.png) |
+| **New trip wizard: review sites on a map** | **Trip report: check-ins, flags and checklist answers** |
+| ![New trip wizard](docs/screenshots/new-trip-wizard.png) | ![Trip review](docs/screenshots/trip-review.png) |
+| **Team, checklists and check-in rules** | **On the phone, in light and dark** |
+| ![Team page](docs/screenshots/team.png) | ![Mobile driver view in light and dark mode](docs/screenshots/mobile-light-dark.png) |
+
+## Features
+
+**Plan**
+- **Import sites from CSV or Excel**: column names are guessed, South African decimal commas and degree-minute-second coordinates are read correctly, and swapped latitude/longitude is detected with a one-tap fix.
+- **Review on a map before saving**: sites outside South Africa and unreadable rows are flagged.
+- **Route optimization** via OpenRouteService (up to 70 stops), with a local nearest-neighbour fallback so a routing outage never leaves a driver without a plan.
+
+**Drive**
+- **Driver mode**: full-screen map, large turn-by-turn instructions, spoken guidance and arrival alerts.
+- **Field-grade GPS**: jumpy fixes are filtered out; going off route recalculates from where you actually are.
+- **Navigate in Google Maps** with one tap when you prefer it.
+
+**Verify**
+- **GPS-verified check-ins**: the database measures how far the phone was from the site and flags check-ins beyond the team's limit (default 150 m). The agent can add a reason.
+- **Site checklists**: managers build them (tick box, short answer, number, photo); required items must be done before check-in.
+- **Photo evidence**: compressed on the phone (a 12 MP photo becomes a few hundred KB), with thumbnails, stored privately per team.
+
+**Works offline**
+- **Installable app** (PWA) that opens without signal; map tiles you've viewed stay cached.
+- **Offline outbox**: check-ins, notes, checklist answers and photos are saved on the phone first and sent when there's signal. Nothing is lost, and changes the server refuses are shown for retry.
+
+**Report and manage**
+- **Trip reports** with completion, flagged check-ins, notes, checklist answers and photos; export to **CSV** or a **PDF** built in the browser.
+- **Teams**: managers plan, assign and follow trips; agents see the trips assigned to them.
+- **Light and dark themes**, keyboard and screen-reader friendly.
+
+## How it works
+
+### Architecture
+
+```mermaid
+flowchart TB
+    subgraph Phone["Phone or laptop browser"]
+        direction LR
+        UI["React app (installable PWA)"]
+        SW["Service worker<br/>app shell + map tiles"]
+        OB[("Offline outbox<br/>IndexedDB")]
+    end
+
+    subgraph Vercel["Vercel"]
+        direction LR
+        STATIC["Static hosting"]
+        ORS_API["/api/ors/*<br/>routing proxy"]
+        DEMO_API["/api/demo/*<br/>demo sandboxes"]
+        CRON["/api/cron/daily<br/>keep-alive + cleanup"]
+    end
+
+    subgraph Supabase["Supabase"]
+        direction LR
+        AUTH["Auth"]
+        DB[("Postgres<br/>row-level security + triggers")]
+        FILES[("Private photo storage")]
+    end
+
+    subgraph External["Map and routing services"]
+        direction LR
+        ORS["OpenRouteService"]
+        OSM["OpenStreetMap tiles"]
+    end
+
+    UI -->|loads app| STATIC
+    UI -->|optimize, directions| ORS_API
+    UI -->|sign in| AUTH
+    OB -->|sync when online| DB
+    OB -->|photos| FILES
+    DEMO_API -->|service role| DB
+    CRON -->|keep-alive, cleanup| DB
+    ORS_API -->|server-side API key| ORS
+    UI -->|map tiles| OSM
+```
+
+- The browser talks to **Supabase directly**; row-level security in Postgres decides what each user can read and write.
+- The **routing proxy** keeps the OpenRouteService key on the server, checks the caller's session, rate-limits per user, and validates input.
+- **Database triggers** do the work that must not be trusted to a phone: measuring check-in distance, enforcing required checklist items, and guarding who can assign trips.
+
+### An offline check-in, end to end
+
+```mermaid
+sequenceDiagram
+    actor Agent
+    participant App as RouteOps app
+    participant Outbox as Outbox (IndexedDB)
+    participant DB as Supabase Postgres
+
+    Agent->>App: Check in (no signal)
+    App->>App: Required checklist items done?
+    App->>Outbox: Save check-in + GPS position + time
+    App-->>Agent: Checked in (saved on this phone)
+    Note over Outbox: Kept across restarts,<br/>owned by the signed-in user
+    Outbox->>DB: Send when back online
+    DB->>DB: Trigger: distance to site, flag beyond team limit
+    DB-->>Outbox: Saved
+    Outbox-->>App: Sync indicator clears
+```
+
+## Tech stack
+
+| Area | Technology |
 | :--- | :--- |
-| **Hands-Free Navigation** | Automatic turn-by-turn voice guidance with two-stage announcements (150m heads-up & 30m action). |
-| **Auto-Pilot Rerouting** | Real-time "Off-Route" detection. Detours (e.g., for lunch) trigger automatic re-optimization from the new location. |
-| **Photo Evidence System** | Native camera integration with high-quality background syncing to Supabase Storage. Supports multiple photos per site. |
-| **Digital Site Logbooks** | Advanced field note-taking with real-time autosave. Capture critical site data and inspection findings directly from the interactive map. |
-| **Field-Grade GPS** | Advanced signal filtering to prevent "street jumping," jitter smoothing, and high-accuracy timeout recovery. |
-| **Professional Reporting** | Dedicated Trip Review dashboard with completion analytics, search/filter verification logs, and CSV data export. |
-| **Infinite Loop Stability** | Refactored internal engine using React Refs to prevent browser crashes during high-frequency GPS updates. |
+| App | React 19, Vite, React Router, Zustand |
+| UI | Tailwind CSS v4, Radix UI, Lucide icons, light and dark themes |
+| Maps and routing | Leaflet + OpenStreetMap, OpenRouteService (optimization + directions) |
+| Offline | vite-plugin-pwa (Workbox), IndexedDB outbox (idb-keyval) |
+| Backend | Supabase: Auth, Postgres with row-level security, private Storage |
+| Server functions | Vercel Functions (routing proxy, demo sandboxes, daily cron) |
+| Files | PapaParse + SheetJS (import), @react-pdf/renderer (PDF reports) |
+| Quality | Vitest + Testing Library (300+ tests), SQL tests against Postgres in Docker, ESLint, GitHub Actions CI |
 
----
+## Security model
 
-# 3. Tech Stack
+- **Row-level security on every table.** Managers see their whole team's trips; agents see trips they own or are assigned; nobody sees another team.
+- **Rules enforced in the database, not the app:** check-in distance and flags, required checklist items, trip assignment, and who may change a trip's checklist.
+- **Private photo storage**, read through short-lived signed URLs; each user can only write to their own folder.
+- **API keys stay on the server:** the OpenRouteService key and the Supabase service-role key are never sent to browsers.
+- **Demo sandboxes are isolated** like real teams, cannot invite real people, are capped and rate limited, and are removed with their files after 24 hours.
+- Every migration ships with SQL tests that run in CI (`npm run test:db`).
 
-### **Frontend & UI**
-* **React + Vite:** Lightweight, fast SPA architecture.
-* **Tailwind CSS v4 + Radix UI:** Mobile-first design system with light and dark themes; icons from Lucide.
-* **Leaflet + OpenStreetMap:** Free, high-performance interactive mapping.
-* **Zustand:** Centralized global state management for trips and sites.
+## Getting started
 
-### **Backend & Cloud (Supabase)**
-* **Auth:** Secure user sign-up and session persistence.
-* **Database (PostgreSQL):** Optimized schema for Trips, Sites, and Evidence.
-* **RLS (Row Level Security):** Strict data privacy ensuring users only access their own records.
-* **Storage Buckets:** Managed storage for high-quality evidence photos.
+**Requirements:** Node.js 22+, a [Supabase](https://supabase.com) project, an [OpenRouteService](https://openrouteservice.org) API key. Docker is only needed for the database tests.
 
-### **Navigation & Data Services**
-* **OpenRouteService (ORS):** Dynamic TSP optimization and turn-by-turn directions.
-* **Browser Geolocation API:** Real-time tracking and Guidance Engine.
-* **Web Speech API:** Professional voice guidance for hands-free operations.
-* **PapaParse & SheetJS:** Robust CSV and Excel parsing for bulk site imports.
-
----
-
-# 4. Advanced Navigation Logic
-
-### **The Guidance Engine**
-The system monitors the user's position against the planned polyline.
-1. **Accuracy Filter:** Rejects GPS fixes with >100m error margin to prevent "jumping streets."
-2. **Teleportation Detection:** Ignores improbable jumps (>500m/s) caused by hardware noise.
-3. **Auto-Advancing Steps:** Detects when a maneuver point is reached and automatically advances to the next instruction.
-4. **Auto-Reroute:** If the user moves >150m away from the path, a fresh optimization is called using the user's *actual* current position.
-
----
-
-# 5. Coordinate Validation System
-
-### **Region-Specific Verification (South Africa)**
-* **Latitude Range:** -22 to -35
-* **Longitude Range:** 16 to 33
-* **Inversion Detection:** Automatically detects if Latitude and Longitude have been swapped.
-* **Live Correction:** "Swap Coordinates" button available on every row for instant data fixing.
-
----
-
-# 6. Database Schema
-
-* `trips`: Stores trip metadata (User ID, Title, Timestamps).
-* `sites`: Stores site data (Trip ID, Name, Coordinates, Verification Status, Notes).
-* `site_images`: Links high-quality photos in Storage to specific site records.
-
----
-
-# 7. Deployment & Environment
-
-The application is optimized for deployment on **Vercel** with the following environment variables:
-* `VITE_SUPABASE_URL`
-* `VITE_SUPABASE_ANON_KEY`
-* `VITE_ORS_API_KEY`
-
----
-
-# 8. Setup Guide
-
-## A. Local Development Setup
-
-1.  **Clone the repository** and navigate to the `routeops` directory.
-2.  **Install Dependencies:**
-    ```bash
-    npm install
-    ```
-3.  **Environment Variables:**
-    Create a `.env` file in the root and add your keys:
-    ```env
-    VITE_SUPABASE_URL=your_supabase_url
-    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-    VITE_ORS_API_KEY=your_openrouteservice_api_key
-    ```
-4.  **Run Locally:**
-    ```bash
-    npm run dev
-    ```
-
-## B. Vercel Deployment
-
-1.  Push your code to GitHub.
-2.  Connect your repository to **Vercel**.
-3.  In Vercel **Project Settings -> Environment Variables**, add the three keys mentioned above.
-4.  Deploy. (Note: The `api/` directory is configured for Vercel Serverless Functions if needed).
-
----
-
-# 9. Supabase Configuration (Critical)
-
-To make the system functional, you must set up the database and storage in your Supabase dashboard.
-
-### Step 1: Database Schema & RLS
-Run this script in the **Supabase SQL Editor**:
-
-```sql
--- 1. TRIPS TABLE
-CREATE TABLE trips (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES auth.users NOT NULL,
-    title TEXT NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 2. SITES TABLE
-CREATE TABLE sites (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    trip_id UUID REFERENCES trips(id) ON DELETE CASCADE NOT NULL,
-    name TEXT NOT NULL,
-    latitude DOUBLE PRECISION NOT NULL,
-    longitude DOUBLE PRECISION NOT NULL,
-    is_checked BOOLEAN DEFAULT FALSE,
-    notes TEXT,
-    order_index INTEGER,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- 3. SITE IMAGES TABLE
-CREATE TABLE site_images (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    site_id UUID REFERENCES sites(id) ON DELETE CASCADE NOT NULL,
-    user_id UUID REFERENCES auth.users NOT NULL,
-    storage_path TEXT NOT NULL,
-    file_name TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- ENABLE ROW LEVEL SECURITY
-ALTER TABLE trips ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
-ALTER TABLE site_images ENABLE ROW LEVEL SECURITY;
-
--- POLICIES
-CREATE POLICY "Users can manage their own trips" ON trips FOR ALL TO authenticated USING (auth.uid() = user_id);
-CREATE POLICY "Users can manage sites in their trips" ON sites FOR ALL TO authenticated USING (EXISTS (SELECT 1 FROM trips WHERE trips.id = sites.trip_id AND trips.user_id = auth.uid()));
-CREATE POLICY "Users can manage their own site images" ON site_images FOR ALL TO authenticated USING (auth.uid() = user_id);
-
--- GRANT PERMISSIONS
-GRANT ALL ON TABLE trips TO authenticated;
-GRANT ALL ON TABLE sites TO authenticated;
-GRANT ALL ON TABLE site_images TO authenticated;
+```bash
+git clone https://github.com/TeekayVuyisile/Field-Route-Optimization-Site-Verification-System.git
+cd Field-Route-Optimization-Site-Verification-System
+npm install
+cp .env.example .env   # then fill it in
+npm run dev
 ```
 
-### Step 2: Storage Bucket Setup
-1.  Go to **Storage** and create a new bucket named `site-photos`.
-2.  Set the bucket to **Public**.
-3.  Run this SQL to allow authenticated users to manage their own folders:
+**Environment variables** (see [`.env.example`](.env.example)):
 
-```sql
--- Allow users to upload to their own folder (Path: user_id/...)
-CREATE POLICY "Allow individual uploads" ON storage.objects FOR INSERT TO authenticated 
-WITH CHECK (bucket_id = 'site-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+| Variable | Where it's used |
+| :--- | :--- |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Browser: Supabase project URL and public anon key |
+| `ORS_API_KEY` | Server only: OpenRouteService key for the routing proxy |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server only: demo sandboxes (optional) |
+| `CRON_SECRET` | Server only: protects the daily cron endpoint (optional) |
 
--- Allow users to view their own files
-CREATE POLICY "Allow individual views" ON storage.objects FOR SELECT TO authenticated 
-USING (bucket_id = 'site-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+**Database:** apply the files in [`supabase/migrations/`](supabase/migrations) in order in the Supabase SQL editor (they are idempotent), then create a private Storage bucket named `site-photos`. In Supabase Auth, keep **Confirm email** on: team membership trusts confirmed emails.
 
--- Allow users to delete their own files
-CREATE POLICY "Allow individual deletes" ON storage.objects FOR DELETE TO authenticated 
-USING (bucket_id = 'site-photos' AND (storage.foldername(name))[1] = auth.uid()::text);
+**Scripts**
+
+```bash
+npm run dev       # app + /api functions locally
+npm test          # unit and component tests (Vitest)
+npm run test:db   # migrations + SQL tests in a throwaway Postgres (Docker)
+npm run lint
+npm run build
 ```
 
----
+## Deployment
 
-# 10. Project Evolution (MVP to Pro)
-This system evolved from a simple mapping tool into a professional compliance platform through rigorous field testing, implementing complex GPS smoothing, background synchronization, and hands-free voice automation.
+Deployed on **Vercel**: connect the repository, add the environment variables above, and deploy. [`vercel.json`](vercel.json) routes `/api/*` to the server functions and schedules the daily cron, which keeps the free-tier Supabase project from pausing and removes expired demo sandboxes. A GitHub Actions workflow pings the database every other day as a backup (repository secrets `SUPABASE_URL`, `SUPABASE_ANON_KEY`).
 
----
+## Project structure
 
-*Author: Teekay Vuyisile Manale*
+```text
+api/                  Vercel functions: ORS proxy, demo sandboxes, daily cron
+  _lib/               shared server code and its tests (not deployed as endpoints)
+src/
+  pages/              Landing, Dashboard, CreateTrip, MapView, TripReview, Team, auth
+  components/         UI kit (ui/), map driver mode (map/), layout, trips, team, demo
+  features/           domain logic: navigation, offline outbox, sites, trips,
+                      check-ins, checklists, reports, photos, import, team
+  services/           OpenRouteService client (fallbacks, chunking, retries)
+supabase/
+  migrations/         numbered, idempotent SQL migrations
+  tests/              SQL tests, including upgrade tests for existing data
+design-system/        design tokens and UI rules
+docs/screenshots/     images used in this README
+```
+
+## License
+
+[MIT](LICENSE) © 2026 Teekay Manale
+
+Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors. Routing by [openrouteservice](https://openrouteservice.org).
