@@ -33,6 +33,16 @@ export const fetchTripWithSites = async (tripId) => {
     return { trip: tripResult.data, sites: sitesResult.data ?? [] };
 };
 
+/**
+ * Updates trip fields (assignment, status). The guard_trip_write trigger
+ * rejects assignments the caller's role doesn't allow.
+ */
+export const updateTrip = async (tripId, fields) => {
+    const { data, error } = await supabase.from('trips').update(fields).eq('id', tripId).select().single();
+    if (error) throw error;
+    return data;
+};
+
 /** Persists the visiting order: siteIds[0] becomes order_index 0. */
 export const saveSiteOrder = async (siteIds) => {
     const { error } = await supabase.rpc('set_site_order', { p_site_ids: siteIds });

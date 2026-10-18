@@ -21,7 +21,8 @@ import { evaluateGuidance, findNextSite, OFF_ROUTE_M, HEADS_UP_M } from '../feat
 import { useSiteSync } from '../features/sites/useSiteSync';
 import { isPersistedId } from '../features/sites/siteIds';
 import * as siteRepository from '../features/sites/siteRepository';
-import { fetchTripWithSites, saveSiteOrder } from '../features/trips/tripRepository';
+import { fetchTripWithSites, saveSiteOrder, updateTrip } from '../features/trips/tripRepository';
+import { statusFromProgress } from '../features/trips/tripStatus';
 import './MapView.css';
 
 const AUTO_REROUTE_COOLDOWN_MS = 30000;
@@ -71,7 +72,7 @@ const FollowUser = ({ pos, follow, onUserPan }) => {
 };
 
 const MapView = () => {
-    const { currentTrip, loadTrip, sites, setSites, updateSite, removeSite } = useTripStore();
+    const { currentTrip, loadTrip, setCurrentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
     const { user } = useAuth();
     const navigate = useNavigate();
     const { tripId } = useParams();
@@ -287,6 +288,23 @@ const MapView = () => {
     const handleToggleChecked = (site) => {
         handleUpdateSite(site.id, { is_checked: !site.is_checked });
         if (isPersistedId(site.id)) flushSite(site.id);
+        syncTripStatus(useTripStore.getState().sites);
+    };
+
+    // First check starts the trip, last check completes it (the database
+    // stamps started_at / completed_at). Managers see this on the dashboard.
+    const syncTripStatus = (latestSites) => {
+        if (!currentTrip?.id) return;
+        const next = statusFromProgress(currentTrip.status ?? 'draft', latestSites);
+        if (next === currentTrip.status) return;
+
+        setCurrentTrip({ ...currentTrip, status: next });
+        updateTrip(currentTrip.id, { status: next })
+            .then(() => { if (next === 'completed') toast.success('All sites checked. Trip completed!'); })
+            .catch((error) => {
+                console.error('Updating trip status failed:', error);
+                toast.warn("Trip progress couldn't be saved; it will update on your next check.");
+            });
     };
 
     const handleDeleteSite = async (id) => {
