@@ -243,6 +243,45 @@ describe('MapView (driver mode)', () => {
         expect(siteRepo.fetchSitePhotos).toHaveBeenCalledWith(['s1', 's2', 's3']);
     });
 
+    describe('with a checklist', () => {
+        const CHECKLIST = { name: 'WiFi audit', items: [
+            { id: 'power', label: 'Power on', type: 'check', required: true },
+            { id: 'ssid', label: 'SSID seen', type: 'text', required: true },
+            { id: 'pic', label: 'Router photo', type: 'photo', required: true },
+            { id: 'speed', label: 'Speed', type: 'number', required: false },
+        ] };
+        beforeEach(() => {
+            gpsPos = { lat: -26.1003, lng: 28.0, accuracy: 9 }; // on site at Alpha
+            useTripStore.getState().loadTrip(
+                { id: 't1', title: 'Soweto run', status: 'assigned', checklist: CHECKLIST },
+                SITES.map((s) => ({ ...s, checklist_answers: {} }))
+            );
+        });
+
+        it('blocks check-in until the required items are done, then sends the answers with it', async () => {
+            renderMap();
+            const checkIn = screen.getByRole('button', { name: 'Check in' });
+            expect(checkIn).toBeDisabled();
+            expect(screen.getByText(/Finish these 3 to check in: Power on, SSID seen, Router photo/)).toBeInTheDocument();
+
+            fireEvent.click(screen.getByLabelText(/Power on/));
+            fireEvent.change(screen.getByLabelText(/SSID seen/), { target: { value: 'City-WiFi' } });
+            expect(screen.getByText(/Finish this to check in: Router photo/)).toBeInTheDocument();
+
+            // A photo still waiting to upload counts (no signal: it stays queued)
+            siteRepo.uploadSitePhoto.mockReturnValue(new Promise(() => {}));
+            fireEvent.change(screen.getByLabelText('Add photo for Alpha'), { target: { files: [new File(['x'], 'r.jpg', { type: 'image/jpeg' })] } });
+            await waitFor(() => expect(checkIn).toBeEnabled());
+            expect(screen.getByText('3 of 4 done')).toBeInTheDocument();
+
+            fireEvent.click(checkIn);
+            await waitFor(() => expect(siteRepo.updateSite).toHaveBeenCalledWith('s1', expect.objectContaining({
+                is_checked: true,
+                checklist_answers: { power: true, ssid: 'City-WiFi' },
+            })));
+        });
+    });
+
     describe('offline', () => {
         beforeEach(() => Object.defineProperty(navigator, 'onLine', { value: false, configurable: true }));
         afterEach(() => Object.defineProperty(navigator, 'onLine', { value: true, configurable: true }));

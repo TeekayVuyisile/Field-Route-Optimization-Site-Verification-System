@@ -40,6 +40,20 @@ describe('buildTripCsv', () => {
     });
 });
 
+describe('buildTripCsv with a checklist', () => {
+    it('adds one column per item with readable answers', () => {
+        const checklist = { name: 'Audit', items: [
+            { id: 'power', label: 'Power on', type: 'check' },
+            { id: 'pic', label: 'Router photo', type: 'photo' },
+        ] };
+        const withAnswers = [{ ...sites[0], checklist_answers: { power: true } }, sites[1]];
+        const lines = buildTripCsv(withAnswers, photos, checklist).split(String.fromCharCode(13, 10));
+        expect(lines[0].endsWith('Check-in reason,"Power on","Router photo"')).toBe(true);
+        expect(lines[1].endsWith('"Yes","2 photos"')).toBe(true);
+        expect(lines[2].endsWith('"",""')).toBe(true);
+    });
+});
+
 describe('fileSlug', () => {
     it('keeps letters and numbers, including accented ones', () => {
         expect(fileSlug('Soweto run, week 43')).toBe('Soweto-run-week-43');

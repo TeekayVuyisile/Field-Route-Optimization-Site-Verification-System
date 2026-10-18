@@ -13,6 +13,7 @@ import {
     swapCoordinates, summarizeSites, isReadable
 } from '../features/import/spreadsheet';
 import { createTripWithSites, updateTrip } from '../features/trips/tripRepository';
+import { fetchChecklistTemplates } from '../features/checklists/checklistRepository';
 import { fetchTeamMembers } from '../features/team/teamRepository';
 import { statusAfterAssignment } from '../features/trips/tripStatus';
 import SiteFormDialog from '../components/trips/SiteFormDialog';
@@ -81,6 +82,8 @@ const CreateTrip = () => {
     const [dialog, setDialog] = useState(null); // { site } | { site: null } for add
     const [members, setMembers] = useState(null);
     const [assignee, setAssignee] = useState('');
+    const [templates, setTemplates] = useState(undefined); // undefined: not loaded; null: unavailable
+    const [templateId, setTemplateId] = useState('');
     const [saving, setSaving] = useState(false);
 
     const summary = summarizeSites(sites);
@@ -133,6 +136,9 @@ const CreateTrip = () => {
 
     const goToSave = async () => {
         setStep(2);
+        if (templates === undefined) {
+            fetchChecklistTemplates().then(setTemplates).catch(() => setTemplates(null));
+        }
         if (isManager && members === null) {
             try {
                 setMembers(await fetchTeamMembers());
@@ -147,11 +153,18 @@ const CreateTrip = () => {
             setSaving(true);
             // Single transaction: either the trip and every site are saved, or nothing is
             let { trip, sites: savedSites } = await createTripWithSites(title.trim(), sites);
-            if (assignee) {
+            // Assignee and checklist in one follow-up update. The trip keeps a
+            // copy of the checklist, so later template edits don't change it.
+            const template = templates?.find((t) => t.id === templateId);
+            const extra = {
+                ...(assignee && { assigned_to: assignee, status: statusAfterAssignment(trip.status, assignee) }),
+                ...(template && { checklist: { name: template.name, items: template.items } }),
+            };
+            if (Object.keys(extra).length > 0) {
                 try {
-                    trip = await updateTrip(trip.id, { assigned_to: assignee, status: statusAfterAssignment(trip.status, assignee) });
+                    trip = await updateTrip(trip.id, extra);
                 } catch (error) {
-                    toast.warn(`Trip saved, but assigning it failed: ${error.message}`);
+                    toast.warn(`Trip saved, but adding the assignee or checklist failed: ${error.message}`);
                 }
             }
             // Swap the staged copy for the persisted one so the map syncs edits
@@ -384,6 +397,16 @@ const CreateTrip = () => {
                                         {(members ?? []).map((m) => (
                                             <option key={m.user_id} value={m.user_id}>{m.user_id === user.id ? `${m.email} (you)` : m.email}</option>
                                         ))}
+                                    </Select>
+                                )}
+                            </Field>
+                        )}
+                        {templates?.length > 0 && (
+                            <Field label="Checklist" hint="Agents answer it at every site before checking in." className="mt-5">
+                                {(field) => (
+                                    <Select {...field} value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+                                        <option value="">No checklist</option>
+                                        {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                                     </Select>
                                 )}
                             </Field>

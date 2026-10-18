@@ -10,6 +10,7 @@ import { buildTripCsv, fileSlug, summarizeReport } from '../features/trips/tripR
 import { TRIP_STATUS_LABELS, TRIP_STATUS_TONE } from '../features/trips/tripStatus';
 import { countLabel, formatDistance } from '../lib/format';
 import { saveBlob } from '../lib/download';
+import { formatAnswer, missingRequired } from '../features/checklists/checklist';
 import PhotoViewer from '../components/trips/PhotoViewer';
 import Button from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Field';
@@ -45,6 +46,26 @@ const CheckInLine = ({ site }) => {
             {parts.join(' · ')}
             {site.check_note && <span className="block text-fg">Reason: {site.check_note}</span>}
         </p>
+    );
+};
+
+// The site's checklist answers, with unanswered required items called out
+const ChecklistAnswers = ({ checklist, site, photoCount }) => {
+    const missing = new Set(missingRequired(checklist, site.checklist_answers, photoCount).map((i) => i.id));
+    return (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 rounded-lg bg-surface-2 p-2.5 text-sm">
+            {checklist.items.map((item) => {
+                const answer = formatAnswer(item, site.checklist_answers?.[item.id], photoCount);
+                return (
+                    <div key={item.id} className="contents">
+                        <dt className="text-muted">{item.label}</dt>
+                        <dd className={cn('break-words', answer ? 'font-semibold' : missing.has(item.id) ? 'text-danger' : 'text-faint')}>
+                            {answer || (missing.has(item.id) ? 'Missing' : '-')}
+                        </dd>
+                    </div>
+                );
+            })}
+        </dl>
     );
 };
 
@@ -142,7 +163,7 @@ const TripReview = () => {
     };
 
     const exportCsv = () => {
-        saveBlob(new Blob([buildTripCsv(sites, photos)], { type: 'text/csv;charset=utf-8' }), `${fileSlug(trip.title)}-report.csv`);
+        saveBlob(new Blob([buildTripCsv(sites, photos, trip.checklist)], { type: 'text/csv;charset=utf-8' }), `${fileSlug(trip.title)}-report.csv`);
     };
 
     const downloadPhoto = async (photo) => {
@@ -285,9 +306,12 @@ const TripReview = () => {
                                         <p className="mt-0.5 font-mono text-xs text-faint">{site.latitude.toFixed(5)}, {site.longitude.toFixed(5)}</p>
                                         {site.is_checked && <CheckInLine site={site} />}
                                     </div>
-                                    <p className={cn('col-start-2 text-sm whitespace-pre-line lg:col-start-auto', site.notes ? 'text-fg' : 'text-faint')}>
-                                        {site.notes || 'No notes'}
-                                    </p>
+                                    <div className="col-start-2 space-y-2 lg:col-start-auto">
+                                        <p className={cn('text-sm whitespace-pre-line', site.notes ? 'text-fg' : 'text-faint')}>
+                                            {site.notes || 'No notes'}
+                                        </p>
+                                        {trip.checklist && <ChecklistAnswers checklist={trip.checklist} site={site} photoCount={sitePhotos.length} />}
+                                    </div>
                                     <div className="col-start-2 flex flex-wrap gap-2 lg:col-start-auto lg:justify-end">
                                         {sitePhotos.length === 0 ? (
                                             <span className="text-sm text-faint">No photos</span>

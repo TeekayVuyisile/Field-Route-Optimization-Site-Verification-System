@@ -9,7 +9,10 @@ import { supabase } from '../../lib/supabase';
 export const fetchMyMembership = async (userId) => {
     const { data, error } = await supabase
         .from('org_members')
-        .select('org_id, role, email, organizations(name, checkin_radius_m)')
+        // organizations(*), not named columns: a column the live database
+        // doesn't have yet (code deployed before its migration) must not
+        // break loading the team for everyone
+        .select('org_id, role, email, organizations(*)')
         .eq('user_id', userId)
         .maybeSingle();
     if (error) throw error;

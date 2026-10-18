@@ -1,4 +1,6 @@
 /** Completion numbers for a trip report. */
+import { formatAnswer } from '../checklists/checklist';
+
 export const summarizeReport = (sites, photos) => {
     const visited = sites.filter((s) => s.is_checked).length;
     return {
@@ -30,8 +32,10 @@ const CSV_HEADERS = [
 /**
  * The verification log as CSV, in visiting order. Starts with a byte-order
  * mark so Excel reads accented names as UTF-8; coordinates stay numbers.
+ * A trip with a checklist gets one column per item.
  */
-export const buildTripCsv = (sites, photos) => {
+export const buildTripCsv = (sites, photos, checklist = null) => {
+    const items = checklist?.items ?? [];
     const photoCounts = new Map();
     for (const photo of photos) photoCounts.set(photo.site_id, (photoCounts.get(photo.site_id) ?? 0) + 1);
 
@@ -48,9 +52,12 @@ export const buildTripCsv = (sites, photos) => {
         site.check_distance_m == null ? '' : Math.round(site.check_distance_m),
         csvText(site.is_checked ? (site.check_flagged ? 'Yes' : 'No') : ''),
         csvText(site.check_note),
+        ...items.map((item) => csvText(formatAnswer(item, site.checklist_answers?.[item.id], photoCounts.get(site.id) ?? 0))),
     ].join(','));
 
-    return `\uFEFF${[CSV_HEADERS.join(','), ...rows].join('\r\n')}\r\n`;
+    const headers = [...CSV_HEADERS, ...items.map((item) => csvText(item.label))];
+
+    return `\uFEFF${[headers.join(','), ...rows].join('\r\n')}\r\n`;
 };
 
 /** Safe file name for downloads: "Soweto run, week 43" -> "Soweto-run-week-43" */
