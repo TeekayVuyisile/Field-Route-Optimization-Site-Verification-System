@@ -1,21 +1,17 @@
-import { useEffect, useState, useRef } from 'react';
-import { Container, Row, Col, Card, Button, ListGroup, Spinner, Form } from 'react-bootstrap';
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents, GeoJSON } from 'react-leaflet';
-import L from 'leaflet';
+import { useEffect, useRef, useState } from 'react';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents, GeoJSON } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { AnimatePresence, motion } from 'framer-motion';
 import useTripStore from '../store/useTripStore';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-    FaRoute, FaVolumeUp, FaVolumeMute, FaLocationArrow, FaPlus,
-    FaEdit, FaTrash, FaCrosshairs, FaCamera
-} from 'react-icons/fa';
+    LuChevronDown, LuChevronUp, LuCircleCheckBig, LuCrosshair, LuLocateFixed, LuMap, LuPlus,
+    LuRoute, LuTriangleAlert, LuVolume2, LuVolumeX
+} from 'react-icons/lu';
 import { getOptimizedRoute, getDirections } from '../services/orsService';
 import { straightLineRoute, isFallbackRoute } from '../features/navigation/routeChunks';
 import { useAuth } from '../context/useAuth';
 import { toast } from 'react-toastify';
 import { speak, isOffRoute } from '../utils/navigationUtils';
-import ManualSiteModal from '../components/ManualSiteModal';
 import { useGpsPosition } from '../features/navigation/useGpsPosition';
 import { evaluateGuidance, findNextSite, OFF_ROUTE_M, HEADS_UP_M } from '../features/navigation/guidance';
 import { useSiteSync } from '../features/sites/useSiteSync';
@@ -23,42 +19,22 @@ import { isPersistedId } from '../features/sites/siteIds';
 import * as siteRepository from '../features/sites/siteRepository';
 import { fetchTripWithSites, saveSiteOrder, updateTrip } from '../features/trips/tripRepository';
 import { statusFromProgress } from '../features/trips/tripStatus';
-import './MapView.css';
+import { calculateDistance } from '../lib/geo';
+import { countLabel } from '../lib/format';
+import { sitePinIcon, userLocationIcon } from '../components/map/mapIcons';
+import InstructionBanner from '../components/map/InstructionBanner';
+import StopCard from '../components/map/StopCard';
+import SiteList from '../components/map/SiteList';
+import SiteFormDialog from '../components/trips/SiteFormDialog';
+import Button from '../components/ui/Button';
+import Spinner from '../components/ui/Spinner';
+import { ConfirmDialog } from '../components/ui/Dialog';
+import { EmptyState } from '../components/ui/primitives';
+import { cn } from '../components/ui/cn';
 
 const AUTO_REROUTE_COOLDOWN_MS = 30000;
 
-// Custom on-brand pin markers (CSS shapes, no external image requests).
-// Status keeps the same red/gold/green convention field users already know;
-// only the chrome changes. Each site pin also carries its visiting-order
-// number so it reads the same as the "Route" sidebar list.
-const pinIconCache = new Map();
-
-const getSitePinIcon = (status, label) => {
-    const key = `${status}-${label}`;
-    if (pinIconCache.has(key)) return pinIconCache.get(key);
-
-    const icon = L.divIcon({
-        html: `
-            <div class="map-pin is-${status}">
-                <span class="map-pin-label">${label}</span>
-            </div>
-        `,
-        className: 'map-pin-wrap',
-        iconSize: [30, 40],
-        iconAnchor: [15, 38],
-        popupAnchor: [0, -36]
-    });
-
-    pinIconCache.set(key, icon);
-    return icon;
-};
-
-const userLocationIcon = L.divIcon({
-    html: '<div class="user-dot"><span class="user-dot-pulse"></span></div>',
-    className: 'user-dot-wrap',
-    iconSize: [22, 22],
-    iconAnchor: [11, 11]
-});
+const mapControl = 'grid size-11 cursor-pointer place-items-center rounded-full border border-border bg-surface text-fg shadow-raised transition-colors duration-200 hover:bg-surface-2';
 
 // Keeps the map centred on the user while following. Dragging the map turns
 // following off, so the user can look around without it snapping back.
@@ -68,6 +44,28 @@ const FollowUser = ({ pos, follow, onUserPan }) => {
     useEffect(() => {
         if (follow && pos) map.setView([pos.lat, pos.lng]);
     }, [map, follow, pos]);
+    return null;
+};
+
+// Pans to a stop picked from the list. `request` is a new object per pick,
+// so picking the same stop again still pans back to it.
+const FocusSite = ({ request }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (request) map.setView([request.lat, request.lng], Math.max(map.getZoom(), 15));
+    }, [map, request]);
+    return null;
+};
+
+// The stop panel grows and shrinks on phones; Leaflet only notices window
+// resizes, so tell it when its own box changes
+const TrackMapSize = () => {
+    const map = useMap();
+    useEffect(() => {
+        const observer = new ResizeObserver(() => map.invalidateSize());
+        observer.observe(map.getContainer());
+        return () => observer.disconnect();
+    }, [map]);
     return null;
 };
 
@@ -99,9 +97,13 @@ const MapView = () => {
     const [voiceEnabled, setVoiceEnabled] = useState(false);
     const [followUser, setFollowUser] = useState(true);
 
-    // Site Modal States
-    const [showModal, setShowModal] = useState(false);
-    const [editSiteData, setEditSiteData] = useState(null);
+    // Stop panel: which stop it shows (null = the next one), whether the full
+    // list is open on phones, and the add/edit/remove dialogs
+    const [selectedId, setSelectedId] = useState(null);
+    const [listOpen, setListOpen] = useState(false);
+    const [focusRequest, setFocusRequest] = useState(null);
+    const [siteDialog, setSiteDialog] = useState(null); // { site } | { site: null } to add
+    const [siteToDelete, setSiteToDelete] = useState(null);
 
     // Navigation State
     const [navigationSteps, setNavigationSteps] = useState([]);
@@ -171,6 +173,7 @@ const MapView = () => {
             ];
             setSites(reordered);
             persistOrder(reordered);
+            if (!isAutoReroute) setSelectedId(null);
 
             const target = optimizedSites[0];
             const routeCoords = [
@@ -200,7 +203,6 @@ const MapView = () => {
                 speak(msg);
             }
 
-            if (!isAutoReroute) toast.success("Route Optimized!");
         } catch (error) {
             console.error("Optimization error:", error);
             if (!isAutoReroute) {
@@ -289,6 +291,8 @@ const MapView = () => {
         handleUpdateSite(site.id, { is_checked: !site.is_checked });
         if (isPersistedId(site.id)) flushSite(site.id);
         syncTripStatus(useTripStore.getState().sites);
+        // After a check-in the panel moves on to the next stop
+        if (!site.is_checked) setSelectedId(null);
     };
 
     // First check starts the trip, last check completes it (the database
@@ -307,36 +311,43 @@ const MapView = () => {
             });
     };
 
-    const handleDeleteSite = async (id) => {
-        if (!window.confirm("Exclude this site?")) return;
+    const handleDeleteSite = async () => {
+        const site = siteToDelete;
+        setSiteToDelete(null);
         try {
-            const index = sites.findIndex(s => s.id === id);
-            removeSite(index);
-            if (isPersistedId(id)) await siteRepository.deleteSite(id);
-            toast.success("Site excluded");
+            removeSite(sites.findIndex(s => s.id === site.id));
+            if (selectedId === site.id) setSelectedId(null);
+            if (isPersistedId(site.id)) await siteRepository.deleteSite(site.id);
+            toast.success(`${site.name} removed from the trip`);
         } catch {
-            toast.error("Delete failed");
+            toast.error("Couldn't remove the site. Reload and try again.");
         }
     };
 
+    const warnIfOutside = (site) => {
+        if (!site.isValid) toast.warn(`${site.name} is outside South Africa. Check its coordinates.`);
+    };
+
     const handleAddSite = async (newSite) => {
+        setSiteDialog(null);
         try {
             if (currentTrip?.id) {
                 const saved = await siteRepository.insertSite(currentTrip.id, newSite, sites.length);
-                setSites([...sites, saved]);
+                setSites([...useTripStore.getState().sites, saved]);
             } else {
-                setSites([...sites, newSite]);
+                setSites([...useTripStore.getState().sites, newSite]);
             }
-            toast.success("Site added");
+            toast.success(`${newSite.name} added`);
+            warnIfOutside(newSite);
         } catch {
-            toast.error("Failed to add site");
+            toast.error("Couldn't add the site. Try again.");
         }
     };
 
     const handleSaveEdit = async (updatedSite) => {
+        setSiteDialog(null);
         try {
-            const index = sites.findIndex(s => s.id === updatedSite.id);
-            updateSite(index, updatedSite);
+            updateSite(sites.findIndex(s => s.id === updatedSite.id), updatedSite);
             if (isPersistedId(updatedSite.id)) {
                 await siteRepository.updateSite(updatedSite.id, {
                     name: updatedSite.name,
@@ -345,8 +356,9 @@ const MapView = () => {
                 });
             }
             toast.success("Site updated");
+            warnIfOutside(updatedSite);
         } catch {
-            toast.error("Update failed");
+            toast.error("Couldn't save the change. Try again.");
         }
     };
 
@@ -364,7 +376,7 @@ const MapView = () => {
         try {
             setUploadingSites(prev => new Set(prev).add(siteId));
             await siteRepository.uploadSitePhoto({ userId: user.id, siteId, file });
-            toast.success(`Photo synced!`);
+            toast.success("Photo saved");
         } catch (error) {
             console.error('Upload error details:', error);
             toast.error(`Upload failed: ${error.message || 'Check security settings'}`);
@@ -377,249 +389,256 @@ const MapView = () => {
         }
     };
 
+    const selectSite = (id, { pan = false } = {}) => {
+        setSelectedId(id);
+        setListOpen(false);
+        if (pan) {
+            const site = sites.find(s => s.id === id);
+            setFollowUser(false);
+            setFocusRequest({ lat: site.latitude, lng: site.longitude });
+        }
+    };
+
     if (loadError) {
         return (
-            <Container className="text-center mt-5">
-                <h3>Couldn't load this trip</h3>
-                <p className="text-muted">It may have been deleted, or you may be offline.</p>
-                <Button onClick={() => navigate('/dashboard')}>Dashboard</Button>
-            </Container>
+            <div className="ui mx-auto max-w-lg px-4 py-10">
+                <EmptyState
+                    icon={LuTriangleAlert}
+                    title="Couldn't load this trip"
+                    action={<Button onClick={() => navigate('/dashboard')}>Back to trips</Button>}
+                >
+                    It may have been deleted, or you may be offline.
+                </EmptyState>
+            </div>
         );
     }
 
     if (needsLoad) {
         return (
-            <Container className="text-center mt-5">
-                <Spinner animation="border" role="status" />
-                <p className="text-muted mt-3">Loading trip...</p>
-            </Container>
+            <div className="ui grid min-h-[50dvh] place-items-center text-muted">
+                <Spinner className="size-6" label="Loading trip" />
+            </div>
         );
     }
 
     if (!currentTrip || sites.length === 0) {
         return (
-            <Container className="text-center mt-5">
-                <h3>No active trip to map</h3>
-                <Button onClick={() => navigate('/dashboard')}>Dashboard</Button>
-            </Container>
+            <div className="ui mx-auto max-w-lg px-4 py-10">
+                <EmptyState
+                    icon={LuMap}
+                    title="No trip open"
+                    action={<Button to="/dashboard">Choose a trip</Button>}
+                >
+                    Open a trip from your list to see its stops and start driving.
+                </EmptyState>
+            </div>
         );
     }
 
     const center = userPos ? [userPos.lat, userPos.lng] : [sites[0].latitude, sites[0].longitude];
+    const checkedCount = sites.filter(s => s.is_checked).length;
+    const allChecked = checkedCount === sites.length;
+    const selectedSite = sites.find(s => s.id === selectedId) ?? nextSite ?? sites.find(s => !s.is_checked) ?? null;
+    const selectedIndex = sites.indexOf(selectedSite);
+    const step = navigationSteps[currentStepIndex];
+    const distanceToSelected = userPos && selectedSite
+        ? calculateDistance(userPos.lat, userPos.lng, selectedSite.latitude, selectedSite.longitude)
+        : null;
 
     return (
-        <Container fluid className="px-2 px-md-4 position-relative">
-            {/* Turn-by-Turn Navigation Banner */}
-            <AnimatePresence>
-                {navigationSteps.length > 0 && navigationSteps[currentStepIndex] && (
-                    <motion.div
-                        key="nav-banner"
-                        initial={{ opacity: 0, y: -16 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -16 }}
-                        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                        className="nav-banner p-3 d-flex align-items-center mb-3"
-                    >
-                        <div className="me-3">
-                            <FaLocationArrow size={32} />
-                        </div>
-                        <div className="flex-grow-1">
-                            <div className="fw-bold fs-5">{navigationSteps[currentStepIndex].instruction}</div>
-                            <small className="opacity-75">
-                                {navigationSteps[currentStepIndex].distance > 1000
-                                    ? `${(navigationSteps[currentStepIndex].distance / 1000).toFixed(1)} km`
-                                    : `${navigationSteps[currentStepIndex].distance.toFixed(0)} m`} remaining in this step
-                            </small>
-                        </div>
-                        <div className="d-flex flex-column gap-1">
-                            <Button
-                                variant="primary"
-                                size="sm"
-                                onClick={() => setCurrentStepIndex(prev => Math.min(prev + 1, navigationSteps.length - 1))}
-                            >
-                                Next
-                            </Button>
-                            <Button
-                                variant="outline-light"
-                                size="sm"
-                                onClick={() => setCurrentStepIndex(prev => Math.max(0, prev - 1))}
-                            >
-                                Back
-                            </Button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            <Row className="map-toolbar mb-3 align-items-center">
-                <Col>
-                    <div className="d-flex align-items-center">
-                        <h3 className="mb-0 text-truncate me-2 fw-bold" style={{ maxWidth: '200px', color: 'var(--ink)' }}>{currentTrip.title}</h3>
-                        <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="d-inline-block">
-                            <Button
-                                variant="outline-primary"
-                                className="toolbar-icon-btn"
-                                onClick={() => { setEditSiteData(null); setShowModal(true); }}
-                                title="Add site"
-                                aria-label="Add site"
-                            >
-                                <FaPlus />
-                            </Button>
-                        </motion.span>
-                    </div>
-                    {savingStatus && <small className="text-muted ms-2">{savingStatus}</small>}
-                </Col>
-                <Col xs="auto" className="d-flex align-items-center">
-                    <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="d-inline-block me-2">
-                        <Button
-                            variant="outline-info"
-                            className="toolbar-icon-btn"
-                            onClick={refreshGPS}
-                            title="Refresh GPS"
-                            aria-label="Refresh GPS"
-                        >
-                            <FaCrosshairs />
-                        </Button>
-                    </motion.span>
-                    <motion.span whileHover={{ scale: 1.08 }} whileTap={{ scale: 0.92 }} className="d-inline-block me-2">
-                        <Button
-                            variant={voiceEnabled ? "primary" : "outline-secondary"}
-                            className="toolbar-icon-btn"
-                            onClick={toggleVoice}
-                            title={voiceEnabled ? "Disable voice guidance" : "Enable voice guidance"}
-                            aria-label={voiceEnabled ? "Disable voice guidance" : "Enable voice guidance"}
-                        >
-                            {voiceEnabled ? <FaVolumeUp /> : <FaVolumeMute />}
-                        </Button>
-                    </motion.span>
-                    <Button variant="primary" className="rounded-pill px-4" onClick={handleOptimizeClick} disabled={isOptimizing || !userPos}>
-                        {isOptimizing ? <Spinner size="sm" /> : <FaRoute className="me-2" />}
-                        Optimize
-                    </Button>
-                </Col>
-            </Row>
-
-            <Row className="g-0">
-                <Col md={8} lg={9}>
-                    <div className="map-container position-relative">
-                        <MapContainer center={center} zoom={13} zoomControl={false}>
-                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                            {userPos && <Marker position={[userPos.lat, userPos.lng]} icon={userLocationIcon} zIndexOffset={1000} />}
-                            {routeData && (
-                                <GeoJSON
-                                    key={JSON.stringify(routeData.features[0].geometry.coordinates[0])}
-                                    data={routeData}
-                                    style={isFallbackRoute(routeData)
-                                        ? { color: '#64748B', weight: 3, opacity: 0.8, dashArray: '8 8' }
-                                        : { color: '#2563EB', weight: 5, opacity: 0.75 }}
-                                />
+        // Fills the screen between the top bar and the phone tab bar.
+        // `isolate` keeps Leaflet's z-indexes (400+) under the app chrome.
+        <div className="ui fixed inset-x-0 top-16 bottom-[calc(4rem+env(safe-area-inset-bottom))] isolate flex flex-col bg-canvas md:bottom-0 md:flex-row">
+            <div className="relative min-h-0 flex-1">
+                <MapContainer center={center} zoom={13} zoomControl={false} className="h-full w-full">
+                    {/* OSM's tile usage policy requires visible attribution */}
+                    <TileLayer
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                    />
+                    {userPos && <Marker position={[userPos.lat, userPos.lng]} icon={userLocationIcon} zIndexOffset={1000} />}
+                    {routeData && (
+                        <GeoJSON
+                            key={JSON.stringify(routeData.features[0].geometry.coordinates[0])}
+                            data={routeData}
+                            style={isFallbackRoute(routeData)
+                                ? { color: '#64748B', weight: 3, opacity: 0.8, dashArray: '8 8' }
+                                : { color: '#2563EB', weight: 5, opacity: 0.75 }}
+                        />
+                    )}
+                    {sites.map((site, index) => (
+                        <Marker
+                            key={site.id}
+                            position={[site.latitude, site.longitude]}
+                            title={site.name}
+                            icon={sitePinIcon(
+                                site.is_checked ? 'checked' : (site.id === nextSite?.id ? 'next' : 'pending'),
+                                index + 1,
+                                site.id === selectedSite?.id
                             )}
-                            {sites.map((site, index) => (
-                                <Marker
-                                    key={site.id}
-                                    position={[site.latitude, site.longitude]}
-                                    icon={getSitePinIcon(
-                                        site.is_checked ? 'checked' : (site.id === nextSite?.id ? 'next' : 'pending'),
-                                        index + 1
-                                    )}
-                                >
-                                    <Popup minWidth={220}>
-                                        <div className="p-1">
-                                            <div className="d-flex justify-content-between align-items-center mb-2">
-                                                <h6 className="mb-0">{site.name}</h6>
-                                                <div className="d-flex align-items-center">
-                                                    {uploadingSites.has(site.id) ? (
-                                                        <Spinner size="sm" animation="border" variant="primary" className="me-2" />
-                                                    ) : (
-                                                        <div className="position-relative me-2" style={{ width: '20px', height: '20px' }}>
-                                                            <input
-                                                                type="file"
-                                                                accept="image/*"
-                                                                capture="environment"
-                                                                className="position-absolute opacity-0 w-100 h-100 cursor-pointer"
-                                                                style={{ zIndex: 10, top: 0, left: 0 }}
-                                                                aria-label={`Add photo for ${site.name}`}
-                                                                onChange={(e) => handleCapturePhoto(site.id, e.target.files[0])}
-                                                            />
-                                                            <FaCamera size={16} className="text-primary" />
-                                                        </div>
-                                                    )}
-                                                    <Button variant="link" size="sm" className="p-0 me-2" aria-label={`Edit ${site.name}`} onClick={() => { setEditSiteData(site); setShowModal(true); }}>
-                                                        <FaEdit />
-                                                    </Button>
-                                                    <Button variant="link" size="sm" className="text-danger p-0" aria-label={`Delete ${site.name}`} onClick={() => handleDeleteSite(site.id)}>
-                                                        <FaTrash />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                            <Form.Group className="mb-2">
-                                                <Form.Control
-                                                    as="textarea" rows={2} size="sm" placeholder="Notes..."
-                                                    value={site.notes || ''}
-                                                    onChange={(e) => handleUpdateSite(site.id, { notes: e.target.value })}
-                                                />
-                                            </Form.Group>
-                                            <Button
-                                                size="sm" variant={site.is_checked ? "warning" : "success"} className="w-100"
-                                                onClick={() => handleToggleChecked(site)}
-                                            >
-                                                {site.is_checked ? 'Uncheck' : 'Check'}
-                                            </Button>
-                                        </div>
-                                    </Popup>
-                                </Marker>
-                            ))}
-                            <FollowUser pos={userPos} follow={followUser} onUserPan={() => setFollowUser(false)} />
-                        </MapContainer>
-                        {!followUser && userPos && (
-                            <Button
-                                variant="light"
-                                className="map-recenter-btn"
-                                onClick={() => setFollowUser(true)}
-                                title="Follow my location"
-                                aria-label="Follow my location"
-                            >
-                                <FaLocationArrow />
-                            </Button>
+                            zIndexOffset={site.id === selectedSite?.id ? 500 : 0}
+                            eventHandlers={{ click: () => selectSite(site.id) }}
+                        />
+                    ))}
+                    <FollowUser pos={userPos} follow={followUser} onUserPan={() => setFollowUser(false)} />
+                    <FocusSite request={focusRequest} />
+                    <TrackMapSize />
+                </MapContainer>
+
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-[1000] flex items-start gap-2 p-3">
+                    <div className="pointer-events-auto min-w-0 flex-1">
+                        {step ? (
+                            <InstructionBanner
+                                step={step}
+                                index={currentStepIndex}
+                                total={navigationSteps.length}
+                                onPrevious={() => setCurrentStepIndex(prev => Math.max(0, prev - 1))}
+                                onNext={() => setCurrentStepIndex(prev => Math.min(prev + 1, navigationSteps.length - 1))}
+                            />
+                        ) : !userPos ? (
+                            <p className="inline-flex items-center gap-2 rounded-full bg-surface px-3 py-2 text-sm font-semibold text-muted shadow-raised">
+                                <Spinner className="size-4" label="Finding your location" /> Finding your location...
+                            </p>
+                        ) : null}
+                        {routeData && isFallbackRoute(routeData) && (
+                            <p className="mt-2 inline-flex items-center gap-2 rounded-full bg-warning-soft px-3 py-2 text-sm font-semibold text-warning shadow-raised">
+                                <LuTriangleAlert className="size-4" aria-hidden /> Straight lines only: directions unavailable
+                            </p>
                         )}
                     </div>
-                </Col>
+                    <div className="pointer-events-auto flex shrink-0 flex-col gap-2">
+                        <button
+                            type="button"
+                            className={cn(mapControl, voiceEnabled && 'border-accent bg-accent text-accent-fg hover:bg-accent-hover')}
+                            onClick={toggleVoice}
+                            aria-pressed={voiceEnabled}
+                            aria-label="Voice guidance"
+                            title={voiceEnabled ? 'Voice guidance on' : 'Voice guidance off'}
+                        >
+                            {voiceEnabled ? <LuVolume2 className="size-5" /> : <LuVolumeX className="size-5" />}
+                        </button>
+                        <button type="button" className={mapControl} onClick={() => refreshGPS()} aria-label="Refresh GPS" title="Refresh GPS">
+                            <LuCrosshair className="size-5" />
+                        </button>
+                        {!followUser && userPos && (
+                            <button
+                                type="button"
+                                className={cn(mapControl, 'text-accent')}
+                                onClick={() => setFollowUser(true)}
+                                aria-label="Follow my location"
+                                title="Follow my location"
+                            >
+                                <LuLocateFixed className="size-5" />
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
 
-                <Col md={4} lg={3}>
-                    <Card className="site-sidebar border-0 ms-md-3" style={{ boxShadow: 'var(--shadow-sm)' }}>
-                        <Card.Header className="bg-white py-3 d-flex justify-content-between">
-                            <h5 className="mb-0 fw-bold" style={{ color: 'var(--ink)' }}>Route</h5>
-                            <span className="status-badge is-accent">{sites.filter(s => s.is_checked).length}/{sites.length}</span>
-                        </Card.Header>
-                        <ListGroup variant="flush" className="overflow-auto" style={{ height: 'calc(100vh - 250px)' }}>
-                            {sites.map((site, index) => (
-                                <ListGroup.Item key={site.id} className={site.id === nextSite?.id ? 'is-next-stop' : ''}>
-                                    <div className="d-flex justify-content-between align-items-center">
-                                        <div className="text-truncate d-flex align-items-center">
-                                            <span className={`site-order-dot ${site.is_checked ? 'is-checked' : site.id === nextSite?.id ? 'is-next' : ''}`}>{index + 1}</span>
-                                            <span className={site.is_checked ? 'text-muted text-decoration-line-through' : 'fw-bold'} style={{ color: site.is_checked ? undefined : 'var(--ink)' }}>{site.name}</span>
-                                        </div>
-                                        <div className="d-flex">
-                                            <Button variant="link" size="sm" className="p-0 me-2" aria-label={`Edit ${site.name}`} onClick={() => { setEditSiteData(site); setShowModal(true); }}>
-                                                <FaEdit />
-                                            </Button>
-                                            <Button variant="link" size="sm" className="text-danger p-0" aria-label={`Delete ${site.name}`} onClick={() => handleDeleteSite(site.id)}>
-                                                <FaTrash />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </ListGroup.Item>
-                            ))}
-                        </ListGroup>
-                    </Card>
-                </Col>
-            </Row>
+            <aside
+                className={cn(
+                    'relative z-[1000] flex flex-col border-t border-border bg-surface shadow-overlay',
+                    'md:w-96 md:max-h-none md:border-t-0 md:border-l md:shadow-none',
+                    listOpen ? 'max-h-[75%]' : 'max-h-[60%]'
+                )}
+                aria-label="Stops"
+            >
+                <div className="flex items-center gap-3 border-b border-border px-4 py-3">
+                    <div className="min-w-0 flex-1">
+                        <h1 className="truncate font-bold">{currentTrip.title}</h1>
+                        <p className="text-xs text-muted">
+                            {checkedCount} of {countLabel(sites.length, 'stop')} visited
+                            {savingStatus && <span className="text-faint"> · {savingStatus}</span>}
+                        </p>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => setSiteDialog({ site: null })} aria-label="Add a site" title="Add a site">
+                        <LuPlus className="size-5" />
+                    </Button>
+                    {!allChecked && (
+                        <Button
+                            variant={routeData ? 'secondary' : 'primary'}
+                            onClick={handleOptimizeClick}
+                            loading={isOptimizing}
+                            disabled={!userPos}
+                            title={userPos ? undefined : 'Waiting for your location'}
+                        >
+                            {!isOptimizing && <LuRoute className="size-4" aria-hidden />}
+                            {routeData ? 'Re-route' : 'Optimize'}
+                        </Button>
+                    )}
+                </div>
 
-            <ManualSiteModal
-                show={showModal} onHide={() => setShowModal(false)}
-                onAdd={handleAddSite} onSave={handleSaveEdit} editData={editSiteData}
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                    <div className="p-4">
+                        {allChecked ? (
+                            <div className="flex flex-col items-center gap-3 py-4 text-center">
+                                <span className="grid size-12 place-items-center rounded-2xl bg-success-soft text-success">
+                                    <LuCircleCheckBig className="size-6" aria-hidden />
+                                </span>
+                                <div>
+                                    <h2 className="font-bold">Every stop visited</h2>
+                                    <p className="mt-1 text-sm text-muted">Check the report, then export it for your records.</p>
+                                </div>
+                                {currentTrip.id && <Button to={`/trip-review/${currentTrip.id}`}>View trip report</Button>}
+                            </div>
+                        ) : selectedSite && (
+                            <StopCard
+                                key={selectedSite.id}
+                                site={selectedSite}
+                                number={selectedIndex + 1}
+                                total={sites.length}
+                                isNext={selectedSite.id === nextSite?.id}
+                                distance={distanceToSelected}
+                                uploading={uploadingSites.has(selectedSite.id)}
+                                onToggleChecked={() => handleToggleChecked(selectedSite)}
+                                onPhoto={(file) => handleCapturePhoto(selectedSite.id, file)}
+                                onNotesChange={(notes) => handleUpdateSite(selectedSite.id, { notes })}
+                                onEdit={() => setSiteDialog({ site: selectedSite })}
+                                onDelete={() => setSiteToDelete(selectedSite)}
+                            />
+                        )}
+                    </div>
+
+                    {/* Phones: the list folds away so the map keeps most of the screen */}
+                    <button
+                        type="button"
+                        className="flex h-12 w-full cursor-pointer items-center justify-center gap-2 border-t border-border text-sm font-semibold text-muted transition-colors duration-200 hover:bg-surface-2 md:hidden"
+                        onClick={() => setListOpen(!listOpen)}
+                        aria-expanded={listOpen}
+                        aria-controls="map-site-list"
+                    >
+                        {listOpen ? <LuChevronDown className="size-4" aria-hidden /> : <LuChevronUp className="size-4" aria-hidden />}
+                        {listOpen ? 'Hide stops' : `All ${countLabel(sites.length, 'stop')}`}
+                    </button>
+                    <div id="map-site-list" className={cn('border-t border-border', !listOpen && 'hidden md:block')}>
+                        <SiteList
+                            sites={sites}
+                            nextId={nextSite?.id}
+                            selectedId={selectedSite?.id}
+                            onSelect={(id) => selectSite(id, { pan: true })}
+                        />
+                    </div>
+                </div>
+            </aside>
+
+            {siteDialog && (
+                <SiteFormDialog
+                    key={siteDialog.site?.id ?? 'new'}
+                    open
+                    onOpenChange={(open) => { if (!open) setSiteDialog(null); }}
+                    site={siteDialog.site}
+                    onSubmit={siteDialog.site ? handleSaveEdit : handleAddSite}
+                />
+            )}
+            <ConfirmDialog
+                open={Boolean(siteToDelete)}
+                onOpenChange={(open) => { if (!open) setSiteToDelete(null); }}
+                title={`Remove ${siteToDelete?.name ?? 'this site'}?`}
+                description="It's taken off this trip for everyone, along with its notes and photos. This can't be undone."
+                confirmLabel="Remove site"
+                onConfirm={handleDeleteSite}
             />
-        </Container>
+        </div>
     );
 };
 

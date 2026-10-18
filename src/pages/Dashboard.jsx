@@ -13,6 +13,7 @@ import Button from '../components/ui/Button';
 import { Alert, EmptyState, PageHeader, Skeleton } from '../components/ui/primitives';
 import { ConfirmDialog } from '../components/ui/Dialog';
 import { cn } from '../components/ui/cn';
+import { countLabel } from '../lib/format';
 
 const FILTERS = [
     { id: 'active', label: 'Active', match: (t) => t.status !== 'completed' },
@@ -238,7 +239,7 @@ const Dashboard = () => {
                 onOpenChange={(open) => { if (!open) setTripToDelete(null); }}
                 title="Delete this trip?"
                 description={tripToDelete
-                    ? `"${tripToDelete.title}" and its ${tripToDelete.siteCount} sites, notes and photo records will be removed for everyone on the team. This can't be undone.`
+                    ? `"${tripToDelete.title}" and its ${countLabel(tripToDelete.siteCount, 'site')}, notes and photo records will be removed for everyone on the team. This can't be undone.`
                     : ''}
                 confirmLabel="Delete trip"
                 loading={deleting}

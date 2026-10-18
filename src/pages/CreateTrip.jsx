@@ -20,6 +20,7 @@ import Button from '../components/ui/Button';
 import { Field, Input, Select } from '../components/ui/Field';
 import { Alert, Badge, Card, EmptyState, PageHeader, Skeleton } from '../components/ui/primitives';
 import { cn } from '../components/ui/cn';
+import { countLabel } from '../lib/format';
 
 // Leaflet only downloads when the review step is reached
 const SitesPreviewMap = lazy(() => import('../components/trips/SitesPreviewMap'));
@@ -156,7 +157,7 @@ const CreateTrip = () => {
             // Swap the staged copy for the persisted one so the map syncs edits
             // against real database ids
             loadTrip(trip, savedSites);
-            toast.success(`"${trip.title}" saved with ${savedSites.length} sites`);
+            toast.success(`"${trip.title}" saved with ${countLabel(savedSites.length, 'site')}`);
             navigate(`/map/${trip.id}`);
         } catch (error) {
             toast.error(`Couldn't save the trip: ${error.message}`);
@@ -261,7 +262,7 @@ const CreateTrip = () => {
                             </div>
                             <div className="mt-6 flex justify-end">
                                 <Button onClick={importRows} disabled={!mapping.lat || !mapping.lng || mapping.lat === mapping.lng}>
-                                    Import {file.rows.length} sites <LuArrowRight className="size-4" aria-hidden />
+                                    Import {countLabel(file.rows.length, 'site')} <LuArrowRight className="size-4" aria-hidden />
                                 </Button>
                             </div>
                         </Card>
@@ -270,7 +271,7 @@ const CreateTrip = () => {
                     {sites.length > 0 && !file && (
                         <Alert
                             tone="info"
-                            title={`You have ${sites.length} sites from before`}
+                            title={`You have ${countLabel(sites.length, 'site')} from before`}
                             action={<Button variant="secondary" onClick={() => setStep(1)}>Review them</Button>}
                         >
                             Importing a file replaces them.
@@ -282,14 +283,14 @@ const CreateTrip = () => {
             {step === 1 && (
                 <div className="space-y-4">
                     <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="neutral">{summary.total} sites</Badge>
+                        <Badge tone="neutral">{countLabel(summary.total, 'site')}</Badge>
                         <Badge tone="success">{summary.ready} ready</Badge>
                         {summary.outOfRegion > 0 && <Badge tone="warning">{summary.outOfRegion} outside South Africa</Badge>}
                         {summary.unreadable > 0 && <Badge tone="danger">{summary.unreadable} unreadable</Badge>}
                     </div>
 
                     {sites.length > 0 && (
-                        <Card className="h-64 overflow-hidden sm:h-80">
+                        <Card className="isolate h-64 overflow-hidden sm:h-80">
                             <Suspense fallback={<Skeleton className="h-full rounded-none" />}>
                                 <SitesPreviewMap sites={sites} />
                             </Suspense>
@@ -369,9 +370,9 @@ const CreateTrip = () => {
                 <div className="space-y-4">
                     <Card className="p-5 sm:p-6">
                         <h2 className="text-lg font-bold">{title.trim()}</h2>
-                        <p className="mt-1 text-muted">{summary.total} sites, ready to optimize and drive.</p>
+                        <p className="mt-1 text-muted">{countLabel(summary.total, 'site')}, ready to optimize and drive.</p>
                         {summary.outOfRegion > 0 && (
-                            <Alert tone="warning" className="mt-4" title={`${summary.outOfRegion} sites are outside South Africa`}>
+                            <Alert tone="warning" className="mt-4" title={`${countLabel(summary.outOfRegion, 'site')} ${summary.outOfRegion === 1 ? 'is' : 'are'} outside South Africa`}>
                                 They'll be kept. Go back if they're mistakes.
                             </Alert>
                         )}

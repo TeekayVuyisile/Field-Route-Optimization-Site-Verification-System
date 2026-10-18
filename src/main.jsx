@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-// Tailwind + layered Bootstrap/toastify; must load before any page CSS so
-// the layer order it declares applies to them
+// Tailwind first: it declares the layer order every later stylesheet uses.
+// Then Bootstrap/toastify, then the old global styles, all in `legacy`.
 import './styles/app.css'
+import './styles/legacy.css'
 import './index.css'
 import App from './App.jsx'
 

@@ -12,7 +12,8 @@ import { shouldAcceptFix } from './gpsFilter';
  *
  * `refreshGPS` is a one-shot fix with a high-accuracy -> standard fallback
  * and no accuracy filter, so it works on laptops without a GPS chip. It also
- * resets the teleportation filter's baseline.
+ * resets the teleportation filter's baseline. The automatic first fix is
+ * `quiet` (progress toasts only for a tap on Refresh GPS; errors always).
  */
 export const useGpsPosition = (onFix) => {
     const [userPos, setUserPos] = useState(null);
@@ -23,29 +24,29 @@ export const useGpsPosition = (onFix) => {
         setUserPos(p);
     }, []);
 
-    const refreshGPS = useCallback(() => {
+    const refreshGPS = useCallback(({ quiet = false } = {}) => {
         if (!navigator.geolocation) {
             toast.error("Geolocation is not supported by this browser.");
             return;
         }
 
-        toast.info("Acquiring high-accuracy GPS signal...");
+        if (!quiet) toast.info("Acquiring high-accuracy GPS signal...");
 
         const toPos = (pos) => ({ lat: pos.coords.latitude, lng: pos.coords.longitude });
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
                 acceptPosition(toPos(pos));
-                toast.success("GPS Lock Acquired!");
+                if (!quiet) toast.success("GPS lock acquired");
             },
             (err) => {
                 console.error("GPS Error:", err);
                 if (err.code === 3) { // Timeout
-                    toast.warning("High-accuracy timed out. Trying standard GPS...");
+                    if (!quiet) toast.warning("High-accuracy timed out. Trying standard GPS...");
                     navigator.geolocation.getCurrentPosition(
                         (pos) => {
                             acceptPosition(toPos(pos));
-                            toast.success("GPS Location found (standard accuracy)");
+                            if (!quiet) toast.success("Location found (standard accuracy)");
                         },
                         (err2) => toast.error(`GPS Error: ${err2.message}`),
                         { enableHighAccuracy: false, timeout: 10000 }
@@ -63,7 +64,7 @@ export const useGpsPosition = (onFix) => {
     // Initial fix as soon as the page loads, instead of leaving the user to
     // find the "Refresh GPS" button
     useEffect(() => {
-        refreshGPS();
+        refreshGPS({ quiet: true });
     }, [refreshGPS]);
 
     useEffect(() => {
