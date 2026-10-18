@@ -21,6 +21,8 @@ export const fetchMyMembership = async (userId) => {
         orgId: data.org_id,
         orgName: data.organizations?.name ?? '',
         checkinRadiusM: data.organizations?.checkin_radius_m ?? 150,
+        // Set for portfolio demo sandboxes (migration 0009): when it's deleted
+        demoExpiresAt: data.organizations?.demo_expires_at ?? null,
         role: data.role,
         email: data.email,
     };

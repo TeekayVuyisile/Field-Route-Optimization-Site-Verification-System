@@ -10,6 +10,7 @@ import { cn } from '../ui/cn';
 import { useTheme } from '../../lib/useTheme';
 import { ConfirmDialog } from '../ui/Dialog';
 import SyncStatus from './SyncStatus';
+import DemoSwitch from '../demo/DemoSwitch';
 import { useOutboxStatus } from '../../features/offline/useOutbox';
 import { countLabel } from '../../lib/format';
 
@@ -85,6 +86,13 @@ const AppShell = ({ children }) => {
 
                             <div className="ml-auto flex items-center gap-2">
                                 <SyncStatus />
+                                {membership?.demoExpiresAt && (
+                                    <DemoSwitch
+                                        role={membership.role}
+                                        expiresAt={membership.demoExpiresAt}
+                                        onEnd={async () => { await signOut(); navigate('/'); }}
+                                    />
+                                )}
                                 <Button className="hidden md:inline-flex" onClick={startNewTrip}>
                                     <LuPlus className="size-4" aria-hidden /> New trip
                                 </Button>
@@ -93,7 +101,10 @@ const AppShell = ({ children }) => {
                                         {user.email?.[0]?.toUpperCase()}
                                     </span>
                                     <div className="max-w-48 leading-tight">
-                                        <p className="truncate text-sm font-semibold">{user.email}</p>
+                                        <p className="truncate text-sm font-semibold">
+                                            {/* Demo logins have throwaway example.com addresses */}
+                                            {membership?.demoExpiresAt ? (membership.role === 'manager' ? 'Demo manager' : 'Demo agent') : user.email}
+                                        </p>
                                         {membership && (
                                             <p className="truncate text-xs text-faint">
                                                 {membership.role === 'manager' ? 'Manager' : 'Field agent'} · {membership.orgName}

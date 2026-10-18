@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/useAuth';
 import AuthLayout from '../components/layout/AuthLayout';
+import TryDemoButton from '../components/demo/TryDemoButton';
 import Button from '../components/ui/Button';
 import { Field, Input } from '../components/ui/Field';
 import { Alert } from '../components/ui/primitives';
@@ -70,6 +71,10 @@ const Login = () => {
                 Don't have an account?{' '}
                 <Link to="/register" className="font-semibold text-accent hover:underline">Create one</Link>
             </p>
+            <div className="mt-8 border-t border-border pt-6 text-center">
+                <p className="text-sm text-muted">Just looking around?</p>
+                <TryDemoButton variant="secondary" className="mt-3 w-full">Try the demo, no sign-up</TryDemoButton>
+            </div>
         </AuthLayout>
     );
 };

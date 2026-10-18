@@ -5,6 +5,7 @@ import {
 import { useAuth } from '../context/useAuth';
 import Button from '../components/ui/Button';
 import Logo from '../components/ui/Logo';
+import TryDemoButton from '../components/demo/TryDemoButton';
 
 const STEPS = [
     { title: 'Import', text: 'Drop in a CSV or Excel sheet of sites, or add them by hand. Bad coordinates are caught before you save.' },
@@ -80,11 +81,16 @@ const Landing = () => {
                             <Button size="lg" to="/dashboard">Open your trips <LuArrowRight className="size-5" aria-hidden /></Button>
                         ) : (
                             <>
-                                <Button size="lg" to="/register">Get started <LuArrowRight className="size-5" aria-hidden /></Button>
-                                <Button size="lg" variant="secondary" to="/login">Log in</Button>
+                                <TryDemoButton size="lg" />
+                                <Button size="lg" variant="secondary" to="/register">Create your team <LuArrowRight className="size-5" aria-hidden /></Button>
                             </>
                         )}
                     </div>
+                    {!user && (
+                        <p className="mt-3 text-sm text-faint">
+                            The demo is a private sandbox with sample trips: no sign-up, deleted after 24 hours.
+                        </p>
+                    )}
                 </div>
                 <HeroPreview />
             </section>
@@ -128,9 +134,13 @@ const Landing = () => {
                             <LuShieldCheck className="size-5 shrink-0" aria-hidden /> Your team's trips and photos stay private to your team.
                         </p>
                     </div>
-                    <Button size="lg" to={user ? '/dashboard' : '/register'} className="shrink-0">
-                        {user ? 'Open your trips' : 'Create your team'} <LuNavigation className="size-5" aria-hidden />
-                    </Button>
+                    {user ? (
+                        <Button size="lg" to="/dashboard" className="shrink-0">
+                            Open your trips <LuNavigation className="size-5" aria-hidden />
+                        </Button>
+                    ) : (
+                        <TryDemoButton size="lg" className="shrink-0">See it with sample data</TryDemoButton>
+                    )}
                 </div>
             </section>
 

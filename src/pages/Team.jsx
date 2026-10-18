@@ -181,32 +181,39 @@ const Team = () => {
                             They join automatically when they sign up and confirm this email. Someone who already has an
                             account can accept from their dashboard.
                         </p>
-                        <form onSubmit={handleInvite} className="mt-4 space-y-4">
-                            <Field label="Email">
-                                {(field) => (
-                                    <Input
-                                        {...field}
-                                        type="email"
-                                        required
-                                        autoComplete="off"
-                                        placeholder="agent@company.co.za"
-                                        value={inviteEmail}
-                                        onChange={(e) => setInviteEmail(e.target.value)}
-                                    />
-                                )}
-                            </Field>
-                            <Field label="Role">
-                                {(field) => (
-                                    <Select {...field} value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
-                                        <option value="agent">{ROLE_LABELS.agent}: works assigned trips</option>
-                                        <option value="manager">{ROLE_LABELS.manager}: sees and assigns all trips</option>
-                                    </Select>
-                                )}
-                            </Field>
-                            <Button type="submit" className="w-full" loading={isInviting}>
-                                {!isInviting && <LuUserPlus className="size-4" aria-hidden />} Add invitation
-                            </Button>
-                        </form>
+                        {membership.demoExpiresAt ? (
+                            // The database refuses invitations into demo sandboxes (0009)
+                            <p className="mt-4 rounded-xl bg-surface-2 p-3 text-sm text-muted">
+                                Inviting people is turned off in the demo. Your sandbox already has a field agent: use the Demo button at the top to switch to their view.
+                            </p>
+                        ) : (
+                            <form onSubmit={handleInvite} className="mt-4 space-y-4">
+                                <Field label="Email">
+                                    {(field) => (
+                                        <Input
+                                            {...field}
+                                            type="email"
+                                            required
+                                            autoComplete="off"
+                                            placeholder="agent@company.co.za"
+                                            value={inviteEmail}
+                                            onChange={(e) => setInviteEmail(e.target.value)}
+                                        />
+                                    )}
+                                </Field>
+                                <Field label="Role">
+                                    {(field) => (
+                                        <Select {...field} value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>
+                                            <option value="agent">{ROLE_LABELS.agent}: works assigned trips</option>
+                                            <option value="manager">{ROLE_LABELS.manager}: sees and assigns all trips</option>
+                                        </Select>
+                                    )}
+                                </Field>
+                                <Button type="submit" className="w-full" loading={isInviting}>
+                                    {!isInviting && <LuUserPlus className="size-4" aria-hidden />} Add invitation
+                                </Button>
+                            </form>
+                        )}
 
                         {invitations.length > 0 && (
                             <div className="mt-6">

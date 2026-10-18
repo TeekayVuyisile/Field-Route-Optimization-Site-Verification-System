@@ -97,8 +97,9 @@
     --ro-danger-soft: rgb(251 113 133 / 0.14);
 }
 
-/* Toasts follow the theme (toastify's own variables, unlayered so they win) */
-:root {
+/* Toasts follow the theme. react-toastify v11 also injects its stylesheet at
+   runtime (after this one), so the doubled selector out-ranks its :root */
+:root:root {
     --toastify-color-light: var(--ro-surface);
     --toastify-text-color-light: var(--ro-fg);
     --toastify-font-family: var(--font-sans);
