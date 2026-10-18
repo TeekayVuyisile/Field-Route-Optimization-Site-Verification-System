@@ -1,7 +1,8 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -13,56 +14,80 @@ import TripReview from './pages/TripReview';
 import { ToastContainer } from 'react-toastify';
 import './App.css';
 
+// Remount the map per trip so route/guidance state never carries over
+const TripMap = () => {
+  const { tripId } = useParams();
+  return <MapView key={tripId} />;
+};
+
+const AppRoutes = () => {
+  const location = useLocation();
+
+  return (
+    <ErrorBoundary resetKey={location.pathname}>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/create-trip"
+          element={
+            <ProtectedRoute>
+              <CreateTrip />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trip-details"
+          element={
+            <ProtectedRoute>
+              <TripDetails />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trip-review/:id"
+          element={
+            <ProtectedRoute>
+              <TripReview />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/map"
+          element={
+            <ProtectedRoute>
+              <MapView />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/map/:tripId"
+          element={
+            <ProtectedRoute>
+              <TripMap />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </ErrorBoundary>
+  );
+};
+
 function App() {
   return (
     <AuthProvider>
       <Router>
         <Navigation />
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route 
-            path="/dashboard" 
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/create-trip" 
-            element={
-              <ProtectedRoute>
-                <CreateTrip />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/trip-details" 
-            element={
-              <ProtectedRoute>
-                <TripDetails />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/trip-review/:id" 
-            element={
-              <ProtectedRoute>
-                <TripReview />
-              </ProtectedRoute>
-            } 
-          />
-          <Route 
-            path="/map" 
-            element={
-              <ProtectedRoute>
-                <MapView />
-              </ProtectedRoute>
-            } 
-          />
-        </Routes>
+        <AppRoutes />
         <ToastContainer position="bottom-right" />
       </Router>
     </AuthProvider>

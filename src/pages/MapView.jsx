@@ -5,7 +5,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { AnimatePresence, motion } from 'framer-motion';
 import useTripStore from '../store/useTripStore';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
     FaRoute, FaVolumeUp, FaVolumeMute, FaLocationArrow, FaPlus,
     FaEdit, FaTrash, FaCrosshairs, FaCamera
@@ -20,6 +20,7 @@ import { evaluateGuidance, findNextSite, OFF_ROUTE_M, HEADS_UP_M } from '../feat
 import { useSiteSync } from '../features/sites/useSiteSync';
 import { isPersistedId } from '../features/sites/siteIds';
 import * as siteRepository from '../features/sites/siteRepository';
+import { fetchTripWithSites, saveSiteOrder } from '../features/trips/tripRepository';
 import './MapView.css';
 
 const AUTO_REROUTE_COOLDOWN_MS = 30000;
@@ -69,9 +70,28 @@ const FollowUser = ({ pos, follow, onUserPan }) => {
 };
 
 const MapView = () => {
-    const { currentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
+    const { currentTrip, loadTrip, sites, setSites, updateSite, removeSite } = useTripStore();
     const { user } = useAuth();
     const navigate = useNavigate();
+    const { tripId } = useParams();
+    const [loadError, setLoadError] = useState(null);
+
+    // /map/:tripId opened directly (link, bookmark, another trip in the store):
+    // load it. A reload of the same trip reuses the persisted store instead.
+    const needsLoad = Boolean(tripId) && currentTrip?.id !== tripId;
+
+    useEffect(() => {
+        if (!needsLoad) return;
+        let cancelled = false;
+        fetchTripWithSites(tripId)
+            .then(({ trip, sites: loadedSites }) => {
+                if (!cancelled) loadTrip(trip, loadedSites);
+            })
+            .catch((error) => {
+                if (!cancelled) setLoadError(error);
+            });
+        return () => { cancelled = true; };
+    }, [needsLoad, tripId, loadTrip]);
     const [routeData, setRouteData] = useState(null);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -109,6 +129,17 @@ const MapView = () => {
         return allSteps;
     };
 
+    // Save the optimized order so resuming the trip shows the same route.
+    // Not awaited: a failure here shouldn't block navigation.
+    const persistOrder = (orderedSites) => {
+        const ids = orderedSites.map(s => s.id);
+        if (!currentTrip?.id || !ids.every(isPersistedId)) return;
+        saveSiteOrder(ids).catch((error) => {
+            console.error('Saving route order failed:', error);
+            toast.warn("Route order couldn't be saved; it will be recalculated next time.");
+        });
+    };
+
     const optimizeRoute = async (isAutoReroute, currentPos) => {
         if (!currentPos || sites.length === 0) return;
 
@@ -132,10 +163,12 @@ const MapView = () => {
             const latest = useTripStore.getState().sites;
             const byId = new Map(latest.map(s => [s.id, s]));
             const optimizedIds = new Set(optimizedSites.map(s => s.id));
-            setSites([
+            const reordered = [
                 ...optimizedSites.map(s => byId.get(s.id)).filter(Boolean),
                 ...latest.filter(s => !optimizedIds.has(s.id))
-            ]);
+            ];
+            setSites(reordered);
+            persistOrder(reordered);
 
             const target = optimizedSites[0];
             const routeCoords = [
@@ -310,6 +343,25 @@ const MapView = () => {
             });
         }
     };
+
+    if (loadError) {
+        return (
+            <Container className="text-center mt-5">
+                <h3>Couldn't load this trip</h3>
+                <p className="text-muted">It may have been deleted, or you may be offline.</p>
+                <Button onClick={() => navigate('/dashboard')}>Dashboard</Button>
+            </Container>
+        );
+    }
+
+    if (needsLoad) {
+        return (
+            <Container className="text-center mt-5">
+                <Spinner animation="border" role="status" />
+                <p className="text-muted mt-3">Loading trip...</p>
+            </Container>
+        );
+    }
 
     if (!currentTrip || sites.length === 0) {
         return (

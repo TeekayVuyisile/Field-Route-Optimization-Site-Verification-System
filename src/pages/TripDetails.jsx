@@ -12,13 +12,11 @@ import { useNavigate } from 'react-router-dom';
 import { FaTrash, FaExchangeAlt, FaPlus, FaSave, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import ManualSiteModal from '../components/ManualSiteModal';
 import { validateCoordinates } from '../utils/validation';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/useAuth';
+import { createTripWithSites } from '../features/trips/tripRepository';
 import { toast } from 'react-toastify';
 
 const TripDetails = () => {
-    const { currentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
-    const { user } = useAuth();
+    const { currentTrip, loadTrip, sites, setSites, updateSite, removeSite } = useTripStore();
     const navigate = useNavigate();
     const [showManualModal, setShowManualModal] = useState(false);
     const [sorting, setSorting] = useState([]);
@@ -110,37 +108,24 @@ const TripDetails = () => {
     const handleSaveTrip = async () => {
         if (!currentTrip || sites.length === 0) return;
 
+        // Already saved (e.g. user came back to this page): don't create a duplicate
+        if (currentTrip.id) {
+            navigate(`/map/${currentTrip.id}`);
+            return;
+        }
+
         try {
             setIsSaving(true);
 
-            const { data: tripData, error: tripError } = await supabase
-                .from('trips')
-                .insert([{
-                    title: currentTrip.title,
-                    user_id: user.id
-                }])
-                .select()
-                .single();
+            // Single transaction: either the trip and every site are saved, or nothing is
+            const { trip, sites: savedSites } = await createTripWithSites(currentTrip.title, sites);
 
-            if (tripError) throw tripError;
-
-            const sitesToInsert = sites.map((site, index) => ({
-                trip_id: tripData.id,
-                name: site.name,
-                latitude: site.latitude,
-                longitude: site.longitude,
-                order_index: index,
-                notes: site.notes || ''
-            }));
-
-            const { error: sitesError } = await supabase
-                .from('sites')
-                .insert(sitesToInsert);
-
-            if (sitesError) throw sitesError;
+            // Swap the staged copy for the persisted one so the map syncs edits
+            // against real database ids
+            loadTrip(trip, savedSites);
 
             toast.success('Trip and sites saved to database!');
-            navigate('/map');
+            navigate(`/map/${trip.id}`);
         } catch (error) {
             toast.error(`Error saving trip: ${error.message}`);
         } finally {

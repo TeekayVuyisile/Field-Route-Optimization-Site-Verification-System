@@ -6,6 +6,7 @@ import { FaPlus, FaRoute, FaCalendarAlt, FaTrash, FaMapMarkedAlt } from 'react-i
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import useTripStore from '../store/useTripStore';
+import { fetchTripWithSites } from '../features/trips/tripRepository';
 import dayjs from 'dayjs';
 import { toast } from 'react-toastify';
 
@@ -22,7 +23,7 @@ const cardVariants = {
 const Dashboard = () => {
     const { user } = useAuth();
     const navigate = useNavigate();
-    const { setCurrentTrip, setSites, clearStore } = useTripStore();
+    const { currentTrip, loadTrip, clearStore } = useTripStore();
     const [trips, setTrips] = useState([]);
     const [loading, setLoading] = useState(true);
 
@@ -48,24 +49,13 @@ const Dashboard = () => {
         fetchTrips();
     }, [user]);
 
+    // Always load fresh from the database when resuming explicitly; a page
+    // reload on /map/:id reuses the persisted store instead
     const handleResumeTrip = async (trip) => {
         try {
-            const { data: sitesData, error } = await supabase
-                .from('sites')
-                .select('*')
-                .eq('trip_id', trip.id)
-                .order('order_index', { ascending: true });
-
-            if (error) throw error;
-
-            const mappedSites = sitesData.map(s => ({
-                ...s,
-                isValid: true
-            }));
-
-            setCurrentTrip(trip);
-            setSites(mappedSites);
-            navigate('/map');
+            const { trip: freshTrip, sites } = await fetchTripWithSites(trip.id);
+            loadTrip(freshTrip, sites);
+            navigate(`/map/${trip.id}`);
         } catch {
             toast.error("Failed to load trip sites");
         }
@@ -83,6 +73,7 @@ const Dashboard = () => {
 
             if (error) throw error;
             setTrips(trips.filter(t => t.id !== tripId));
+            if (currentTrip?.id === tripId) clearStore();
             toast.success("Trip deleted");
         } catch {
             toast.error("Failed to delete trip");
