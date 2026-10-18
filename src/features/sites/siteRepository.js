@@ -28,6 +28,28 @@ export const insertSite = async (tripId, site, orderIndex) => {
     return data;
 };
 
+const PHOTO_URL_TTL_SECONDS = 60 * 60;
+
+/**
+ * Temporary signed URLs for photos, in one request. Works whether the bucket
+ * is public or private (storage RLS still decides who may sign which path),
+ * so the bucket can be made private without breaking the review page.
+ * @param {string[]} storagePaths
+ * @returns {Promise<Map<string, string>>} storage_path -> signed URL
+ */
+export const getSignedPhotoUrls = async (storagePaths) => {
+    if (storagePaths.length === 0) return new Map();
+
+    const { data, error } = await supabase.storage
+        .from('site-photos')
+        .createSignedUrls(storagePaths, PHOTO_URL_TTL_SECONDS);
+    if (error) throw error;
+
+    return new Map(
+        data.filter((entry) => entry.signedUrl && !entry.error).map((entry) => [entry.path, entry.signedUrl])
+    );
+};
+
 /**
  * Upload a photo to the `site-photos` bucket and record it in `site_images`.
  * The path MUST start with the user's id: storage RLS policies key off the
