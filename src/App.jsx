@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { TeamProvider } from './context/TeamContext';
 import AppShell from './components/layout/AppShell';
@@ -16,7 +16,6 @@ const Login = lazy(() => import('./pages/Login'));
 const Register = lazy(() => import('./pages/Register'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CreateTrip = lazy(() => import('./pages/CreateTrip'));
-const TripDetails = lazy(() => import('./pages/TripDetails'));
 const MapView = lazy(() => import('./pages/MapView'));
 const TripReview = lazy(() => import('./pages/TripReview'));
 const Team = lazy(() => import('./pages/Team'));
@@ -53,14 +52,8 @@ const AppRoutes = () => {
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/trip-details"
-          element={
-            <ProtectedRoute>
-              <TripDetails />
-            </ProtectedRoute>
-          }
-        />
+        {/* Review is now step 2 of the new-trip wizard; keep old links working */}
+        <Route path="/trip-details" element={<Navigate to="/create-trip" replace />} />
         <Route
           path="/trip-review/:id"
           element={

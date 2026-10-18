@@ -121,7 +121,7 @@ const Team = () => {
                 description={`You're a ${ROLE_LABELS[membership.role].toLowerCase()} on this team.`}
             />
 
-            <div className={isManager ? 'grid items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}>
+            <div className={isManager ? 'grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}>
                 <Card as="section" aria-labelledby="members-heading">
                     <h2 id="members-heading" className="border-b border-border px-5 py-4 font-bold">
                         Members <span className="font-semibold text-faint">({members.length})</span>

@@ -36,9 +36,13 @@ const Dashboard = () => {
     const [deleting, setDeleting] = useState(false);
     const [joining, setJoining] = useState(false);
 
-    // RLS scopes this: managers get every team trip, agents their own + assigned
+    // RLS scopes this: managers get every team trip, agents their own + assigned.
+    // Keyed on ids, not objects: auth hands out a new user object on token
+    // refresh, which shouldn't refetch the whole dashboard.
+    const userId = user?.id;
+    const orgId = membership?.orgId;
     useEffect(() => {
-        if (!user || !membership) return;
+        if (!userId || !orgId) return;
         let cancelled = false;
 
         (async () => {
@@ -57,7 +61,7 @@ const Dashboard = () => {
         })();
 
         return () => { cancelled = true; };
-    }, [user, membership]);
+    }, [userId, orgId]);
 
     const counts = useMemo(
         () => Object.fromEntries(FILTERS.map((f) => [f.id, trips.filter(f.match).length])),
@@ -133,16 +137,15 @@ const Dashboard = () => {
 
     return (
         <div className="ui mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
+            {/* "New trip" lives in the app shell (top bar / tab bar), not here.
+                Neutral title until the role is known, so it doesn't flip. */}
             <PageHeader
-                title={isManager ? 'Team trips' : 'Your trips'}
-                description={isManager
-                    ? 'Plan routes, assign them to your team and follow progress.'
-                    : 'Trips you created or that were assigned to you.'}
-                actions={(
-                    <Button onClick={startNewTrip} className="hidden sm:inline-flex">
-                        <LuPlus className="size-4" aria-hidden /> New trip
-                    </Button>
-                )}
+                title={teamLoading ? 'Trips' : isManager ? 'Team trips' : 'Your trips'}
+                description={teamLoading
+                    ? 'Loading your team...'
+                    : isManager
+                        ? 'Plan routes, assign them to your team and follow progress.'
+                        : 'Trips you created or that were assigned to you.'}
             />
 
             <div className="space-y-4">
@@ -163,7 +166,7 @@ const Dashboard = () => {
             </div>
 
             {showSkeleton ? (
-                <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="Loading trips">
+                <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="Loading trips">
                     {[0, 1, 2].map((i) => <Skeleton key={i} className="h-64 rounded-2xl" />)}
                 </div>
             ) : !teamError && !loadError && trips.length === 0 ? (
@@ -188,7 +191,7 @@ const Dashboard = () => {
                                     aria-pressed={filter === f.id}
                                     onClick={() => setFilter(f.id)}
                                     className={cn(
-                                        'inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors duration-200',
+                                        'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors duration-200 sm:h-9',
                                         filter === f.id ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg'
                                     )}
                                 >
@@ -205,7 +208,7 @@ const Dashboard = () => {
                     </div>
 
                     {visibleTrips.length > 0 ? (
-                        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                             {visibleTrips.map((trip) => (
                                 <TripCard
                                     key={trip.id}
