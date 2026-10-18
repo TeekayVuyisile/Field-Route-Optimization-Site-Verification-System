@@ -6,12 +6,17 @@ import * as XLSX from 'xlsx';
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { FaUpload, FaExclamationTriangle, FaExchangeAlt, FaTrash, FaKeyboard, FaPlus, FaCheck } from 'react-icons/fa';
-import { validateCoordinates } from '../utils/validation';
+import { validateCoordinates, parseCoordinate, hasReadableCoordinates as isReadable } from '../utils/validation';
 import { createLocalId } from '../features/sites/siteIds';
 import useTripStore from '../store/useTripStore';
 import ManualSiteModal from '../components/ManualSiteModal';
 
 const STEPS = ['Title', 'Method', 'Source', 'Preview'];
+
+// Parsed value when readable; otherwise the original cell text, so the user
+// can see what needs fixing instead of "NaN"
+const formatCoordinateCell = (value, raw) =>
+    Number.isFinite(value) ? value : <span className="text-danger">{String(raw ?? '') || '(empty)'}</span>;
 
 const StepHeader = ({ step }) => (
     <div className="create-trip-stepper mb-4">
@@ -90,8 +95,8 @@ const CreateTrip = () => {
         }
 
         const mapped = fileData.map((row, index) => {
-            const lat = parseFloat(row[mapping.lat]);
-            const lng = parseFloat(row[mapping.lng]);
+            const lat = parseCoordinate(row[mapping.lat]);
+            const lng = parseCoordinate(row[mapping.lng]);
             const validation = validateCoordinates(lat, lng);
 
             return {
@@ -99,6 +104,9 @@ const CreateTrip = () => {
                 name: row[mapping.name] || `Site ${index + 1}`,
                 latitude: lat,
                 longitude: lng,
+                // Original cell text, shown when it couldn't be read
+                rawLatitude: row[mapping.lat],
+                rawLongitude: row[mapping.lng],
                 isValid: validation.isValid,
                 error: validation.error,
                 isInverted: validation.isInverted,
@@ -134,6 +142,14 @@ const CreateTrip = () => {
     };
 
     const handleFinalize = () => {
+        // Unreadable coordinates can't be saved or routed; only out-of-region
+        // ones may be kept on purpose
+        const unreadableCount = previewSites.filter(s => !isReadable(s)).length;
+        if (unreadableCount > 0) {
+            toast.error(`${unreadableCount} site(s) have coordinates that couldn't be read. Fix or delete them first.`);
+            return;
+        }
+
         const invalidCount = previewSites.filter(s => !s.isValid).length;
         if (invalidCount > 0) {
             if (!window.confirm(`${invalidCount} sites have errors. Continue anyway?`)) return;
@@ -312,8 +328,8 @@ const CreateTrip = () => {
                                         {previewSites.map((site) => (
                                             <tr key={site.id}>
                                                 <td>{site.name}</td>
-                                                <td>{site.latitude}</td>
-                                                <td>{site.longitude}</td>
+                                                <td>{formatCoordinateCell(site.latitude, site.rawLatitude)}</td>
+                                                <td>{formatCoordinateCell(site.longitude, site.rawLongitude)}</td>
                                                 <td>
                                                     {site.isValid ? (
                                                         <span className="status-badge is-success">Ready</span>
