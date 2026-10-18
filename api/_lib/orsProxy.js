@@ -2,8 +2,12 @@ import { json, readJson } from './http.js';
 import { getUserId } from './auth.js';
 import { createRateLimiter } from './rateLimit.js';
 
-const ORS_BASE_URL = 'https://api.openrouteservice.org';
-const ORS_TIMEOUT_MS = 20_000;
+// api.openrouteservice.org is deprecated (quota cut to 10% from Aug 2026,
+// shut down Nov 2026). Same keys work here; paths differ per service.
+export const ORS_BASE_URL = 'https://api.heigit.org';
+// A healthy ORS answers in ~1s; waiting longer only keeps a driver staring
+// at a spinner during an ORS outage
+const ORS_TIMEOUT_MS = 10_000;
 
 // Generous for one driver (an optimize + a few reroutes a minute), tight
 // enough to stop a client stuck in a loop from burning the daily ORS quota
@@ -54,6 +58,10 @@ export const handleOrsRequest = async (request, { validate, path, buildOrsBody, 
             signal: AbortSignal.timeout(ORS_TIMEOUT_MS)
         });
     } catch (error) {
+        if (error.name === 'TimeoutError') {
+            console.error(`ORS ${path} timed out after ${ORS_TIMEOUT_MS}ms`);
+            return json(504, { error: 'Routing service timed out' });
+        }
         console.error('ORS unreachable:', error);
         return json(502, { error: 'Routing service unreachable' });
     }

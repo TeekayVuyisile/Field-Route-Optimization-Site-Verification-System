@@ -7,7 +7,7 @@ import { validateDirectionsBody } from '../_lib/validate.js';
  * Returns: the ORS driving-car GeoJSON FeatureCollection, with steps.
  */
 export const POST = (request) => handleOrsRequest(request, {
-    path: '/v2/directions/driving-car/geojson',
+    path: '/openrouteservice/v2/directions/driving-car/geojson',
     validate: validateDirectionsBody,
     buildOrsBody: ({ coordinates }) => ({
         coordinates,

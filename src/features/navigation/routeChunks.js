@@ -20,6 +20,23 @@ export const chunkWaypoints = (coords, max = MAX_WAYPOINTS_PER_REQUEST) => {
 };
 
 /**
+ * Stand-in route when directions are unavailable (ORS down): straight lines
+ * between the stops in visiting order, with no turn-by-turn steps. Marked
+ * `fallback` so callers can skip off-route detection, which would otherwise
+ * fire constantly because real roads never follow these lines.
+ */
+export const straightLineRoute = (coords) => ({
+    type: 'FeatureCollection',
+    features: [{
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: coords },
+        properties: { fallback: true, segments: [], way_points: coords.map((_, i) => i) }
+    }]
+});
+
+export const isFallbackRoute = (route) => Boolean(route?.features?.[0]?.properties?.fallback);
+
+/**
  * Merges ORS GeoJSON directions responses for consecutive chunks into one
  * FeatureCollection shaped like a single response. All index-based fields
  * (step.way_points, properties.way_points) are remapped into the merged
