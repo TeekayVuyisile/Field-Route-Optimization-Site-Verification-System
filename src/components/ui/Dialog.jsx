@@ -10,10 +10,10 @@ import Button from './Button';
 export const Dialog = ({ open, onOpenChange, title, description, children, footer, className }) => (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
         <RadixDialog.Portal>
-            <RadixDialog.Overlay className="ui fixed inset-0 z-50 bg-ink/50 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
+            <RadixDialog.Overlay className="fixed inset-0 z-50 bg-ink/50 backdrop-blur-[2px] data-[state=open]:animate-fade-in" />
             <RadixDialog.Content
                 className={cn(
-                    'ui fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-3xl bg-surface p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-overlay',
+                    'fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-3xl bg-surface p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-overlay',
                     'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:pb-6',
                     'data-[state=open]:animate-fade-in focus:outline-none',
                     className

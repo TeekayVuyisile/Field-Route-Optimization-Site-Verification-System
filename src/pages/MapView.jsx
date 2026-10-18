@@ -57,6 +57,19 @@ const FocusSite = ({ request }) => {
     return null;
 };
 
+// Frames every stop once when the map opens. Following the user from the
+// start could land 400 km away from the trip (or wherever an IP-based
+// location says), with no pins in sight.
+const FitSitesOnce = ({ sites }) => {
+    const map = useMap();
+    const [points] = useState(() => sites.map((s) => [s.latitude, s.longitude]));
+    useEffect(() => {
+        if (points.length === 1) map.setView(points[0], 15);
+        else map.fitBounds(points, { padding: [40, 40], maxZoom: 15 });
+    }, [map, points]);
+    return null;
+};
+
 // The stop panel grows and shrinks on phones; Leaflet only notices window
 // resizes, so tell it when its own box changes
 const TrackMapSize = () => {
@@ -95,7 +108,8 @@ const MapView = () => {
     const [routeData, setRouteData] = useState(null);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [voiceEnabled, setVoiceEnabled] = useState(false);
-    const [followUser, setFollowUser] = useState(true);
+    // Following starts with navigation (Optimize) or the follow button
+    const [followUser, setFollowUser] = useState(false);
 
     // Stop panel: which stop it shows (null = the next one), whether the full
     // list is open on phones, and the add/edit/remove dialogs
@@ -173,7 +187,10 @@ const MapView = () => {
             ];
             setSites(reordered);
             persistOrder(reordered);
-            if (!isAutoReroute) setSelectedId(null);
+            if (!isAutoReroute) {
+                setSelectedId(null);
+                setFollowUser(true);
+            }
 
             const target = optimizedSites[0];
             const routeCoords = [
@@ -401,7 +418,7 @@ const MapView = () => {
 
     if (loadError) {
         return (
-            <div className="ui mx-auto max-w-lg px-4 py-10">
+            <div className="mx-auto max-w-lg px-4 py-10">
                 <EmptyState
                     icon={LuTriangleAlert}
                     title="Couldn't load this trip"
@@ -415,7 +432,7 @@ const MapView = () => {
 
     if (needsLoad) {
         return (
-            <div className="ui grid min-h-[50dvh] place-items-center text-muted">
+            <div className="grid min-h-[50dvh] place-items-center text-muted">
                 <Spinner className="size-6" label="Loading trip" />
             </div>
         );
@@ -423,7 +440,7 @@ const MapView = () => {
 
     if (!currentTrip || sites.length === 0) {
         return (
-            <div className="ui mx-auto max-w-lg px-4 py-10">
+            <div className="mx-auto max-w-lg px-4 py-10">
                 <EmptyState
                     icon={LuMap}
                     title="No trip open"
@@ -435,7 +452,6 @@ const MapView = () => {
         );
     }
 
-    const center = userPos ? [userPos.lat, userPos.lng] : [sites[0].latitude, sites[0].longitude];
     const checkedCount = sites.filter(s => s.is_checked).length;
     const allChecked = checkedCount === sites.length;
     const selectedSite = sites.find(s => s.id === selectedId) ?? nextSite ?? sites.find(s => !s.is_checked) ?? null;
@@ -448,9 +464,9 @@ const MapView = () => {
     return (
         // Fills the screen between the top bar and the phone tab bar.
         // `isolate` keeps Leaflet's z-indexes (400+) under the app chrome.
-        <div className="ui fixed inset-x-0 top-16 bottom-[calc(4rem+env(safe-area-inset-bottom))] isolate flex flex-col bg-canvas md:bottom-0 md:flex-row">
+        <div className="fixed inset-x-0 top-16 bottom-[calc(4rem+env(safe-area-inset-bottom))] isolate flex flex-col bg-canvas md:bottom-0 md:flex-row">
             <div className="relative min-h-0 flex-1">
-                <MapContainer center={center} zoom={13} zoomControl={false} className="h-full w-full">
+                <MapContainer center={[sites[0].latitude, sites[0].longitude]} zoom={13} zoomControl={false} className="h-full w-full">
                     {/* OSM's tile usage policy requires visible attribution */}
                     <TileLayer
                         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -481,6 +497,7 @@ const MapView = () => {
                         />
                     ))}
                     <FollowUser pos={userPos} follow={followUser} onUserPan={() => setFollowUser(false)} />
+                    <FitSitesOnce sites={sites} />
                     <FocusSite request={focusRequest} />
                     <TrackMapSize />
                 </MapContainer>

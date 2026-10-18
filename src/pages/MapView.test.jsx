@@ -6,9 +6,10 @@ const authValue = { user: { id: 'me' } };
 vi.mock('../context/useAuth', () => ({ useAuth: () => authValue }));
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 
+const mapCalls = vi.hoisted(() => ({ fitBounds: vi.fn() }));
 // Leaflet needs real layout; pins become buttons so tests can tap them
 vi.mock('react-leaflet', () => {
-    const map = { setView: () => {}, getZoom: () => 13, invalidateSize: () => {}, getContainer: () => document.createElement('div') };
+    const map = { setView: () => {}, fitBounds: (...a) => mapCalls.fitBounds(...a), getZoom: () => 13, invalidateSize: () => {}, getContainer: () => document.createElement('div') };
     return {
         MapContainer: ({ children }) => <div>{children}</div>,
         TileLayer: () => null,
@@ -83,6 +84,18 @@ describe('MapView (driver mode)', () => {
         useTripStore.getState().clearStore();
         render(<MemoryRouter><MapView /></MemoryRouter>);
         expect(screen.getByText('No trip open')).toBeInTheDocument();
+    });
+
+    it('opens framed on the stops, then follows the driver once navigation starts', async () => {
+        getOptimizedRoute.mockResolvedValue(SITES);
+        getDirections.mockRejectedValue(new Error('down'));
+        mapCalls.fitBounds.mockClear();
+        renderMap();
+        expect(mapCalls.fitBounds).toHaveBeenCalledWith([[-26.1, 28.0], [-26.2, 28.1], [-26.3, 28.2]], expect.anything());
+        expect(screen.getByRole('button', { name: 'Follow my location' })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Optimize' }));
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Follow my location' })).not.toBeInTheDocument());
     });
 
     it('shows the first unvisited stop and switches stops from the list or a pin', () => {

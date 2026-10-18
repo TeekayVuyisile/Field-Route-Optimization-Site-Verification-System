@@ -97,7 +97,7 @@ const Team = () => {
 
     if (teamLoading || (orgId && !loaded)) {
         return (
-            <div className="ui mx-auto max-w-5xl space-y-4 px-4 py-6 sm:px-6 sm:py-10" aria-busy="true" aria-label="Loading team">
+            <div className="mx-auto max-w-5xl space-y-4 px-4 py-6 sm:px-6 sm:py-10" aria-busy="true" aria-label="Loading team">
                 <Skeleton className="h-10 w-64" />
                 <Skeleton className="h-64 rounded-2xl" />
             </div>
@@ -106,7 +106,7 @@ const Team = () => {
 
     if (!membership) {
         return (
-            <div className="ui mx-auto max-w-5xl px-4 py-10 sm:px-6">
+            <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
                 <Alert tone="danger" title="Team unavailable">
                     We couldn't load your team. Try signing out and back in.
                 </Alert>
@@ -115,7 +115,7 @@ const Team = () => {
     }
 
     return (
-        <div className="ui mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+        <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
             <PageHeader
                 title={membership.orgName}
                 description={`You're a ${ROLE_LABELS[membership.role].toLowerCase()} on this team.`}

@@ -34,7 +34,7 @@ A professional-grade web application designed for field teams to manage complex 
 
 ### **Frontend & UI**
 * **React + Vite:** Lightweight, fast SPA architecture.
-* **Bootstrap 5:** Responsive, professional UI components.
+* **Tailwind CSS v4 + Radix UI:** Mobile-first design system with light and dark themes; icons from Lucide.
 * **Leaflet + OpenStreetMap:** Free, high-performance interactive mapping.
 * **Zustand:** Centralized global state management for trips and sites.
 

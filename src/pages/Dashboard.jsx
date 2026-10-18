@@ -137,7 +137,7 @@ const Dashboard = () => {
     const showSkeleton = teamLoading || (membership && loading);
 
     return (
-        <div className="ui mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
+        <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-10">
             {/* "New trip" lives in the app shell (top bar / tab bar), not here.
                 Neutral title until the role is known, so it doesn't flip. */}
             <PageHeader

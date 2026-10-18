@@ -77,3 +77,51 @@ export const uploadSitePhoto = async ({ userId, siteId, file }) => {
 
     return filePath;
 };
+
+/**
+ * Photo records for these sites, oldest first, each with a signed `url`.
+ * If signing fails the records still come back (url null) with
+ * `urlsFailed`, so a report can show the rest of its data.
+ * @returns {Promise<{ photos: Array, urlsFailed: boolean }>}
+ */
+export const fetchSitePhotos = async (siteIds) => {
+    if (siteIds.length === 0) return { photos: [], urlsFailed: false };
+
+    const { data, error } = await supabase
+        .from('site_images')
+        .select('*')
+        .in('site_id', siteIds)
+        .order('created_at', { ascending: true });
+    if (error) throw error;
+
+    let urls = new Map();
+    let urlsFailed = false;
+    try {
+        urls = await getSignedPhotoUrls(data.map((photo) => photo.storage_path));
+    } catch (urlError) {
+        console.error('Could not sign photo URLs:', urlError);
+        urlsFailed = true;
+    }
+    return { photos: data.map((photo) => ({ ...photo, url: urls.get(photo.storage_path) ?? null })), urlsFailed };
+};
+
+/**
+ * File first, then the record. Order matters: the storage policy that lets a
+ * manager delete a teammate's photo looks the file up in `site_images`, so
+ * the record must still exist when the file goes. Both policies allow the
+ * same people (uploader or team manager).
+ */
+export const deleteSitePhoto = async (photo) => {
+    const { error: storageError } = await supabase.storage.from('site-photos').remove([photo.storage_path]);
+    if (storageError) throw storageError;
+
+    const { error: dbError } = await supabase.from('site_images').delete().eq('id', photo.id);
+    if (dbError) throw dbError;
+};
+
+/** The original file, for "Download" */
+export const downloadSitePhoto = async (photo) => {
+    const { data, error } = await supabase.storage.from('site-photos').download(photo.storage_path);
+    if (error) throw error;
+    return data;
+};

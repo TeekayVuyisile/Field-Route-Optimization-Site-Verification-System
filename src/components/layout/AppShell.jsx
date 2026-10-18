@@ -1,11 +1,12 @@
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
-import { LuLayoutDashboard, LuMap, LuUsers, LuPlus, LuLogOut } from 'react-icons/lu';
+import { LuLayoutDashboard, LuMap, LuUsers, LuPlus, LuLogOut, LuMoon, LuSun } from 'react-icons/lu';
 import { useAuth } from '../../context/useAuth';
 import { useTeam } from '../../context/useTeam';
 import useTripStore from '../../store/useTripStore';
 import Logo from '../ui/Logo';
 import Button from '../ui/Button';
 import { cn } from '../ui/cn';
+import { useTheme } from '../../lib/useTheme';
 
 const NAV_ITEMS = [
     { to: '/dashboard', label: 'Trips', icon: LuLayoutDashboard },
@@ -23,6 +24,19 @@ const AppShell = ({ children }) => {
     const clearStore = useTripStore((s) => s.clearStore);
     const navigate = useNavigate();
     const { pathname } = useLocation();
+    const { theme, toggleTheme } = useTheme();
+
+    const themeButton = (
+        <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+        >
+            {theme === 'dark' ? <LuSun className="size-5" /> : <LuMoon className="size-5" />}
+        </Button>
+    );
 
     const startNewTrip = () => {
         clearStore();
@@ -36,7 +50,7 @@ const AppShell = ({ children }) => {
 
     return (
         <div className="min-h-dvh bg-canvas text-fg">
-            <header className="ui sticky top-0 z-40 border-b border-border bg-surface/85 backdrop-blur-md">
+            <header className="sticky top-0 z-40 border-b border-border bg-surface/85 backdrop-blur-md">
                 <div className="mx-auto flex h-16 max-w-7xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
                     <Link to={user ? '/dashboard' : '/'} className="shrink-0 rounded-lg" aria-label="RouteOps home">
                         <Logo />
@@ -77,6 +91,7 @@ const AppShell = ({ children }) => {
                                         )}
                                     </div>
                                 </div>
+                                {themeButton}
                                 <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Sign out" title="Sign out">
                                     <LuLogOut className="size-5" />
                                 </Button>
@@ -85,12 +100,15 @@ const AppShell = ({ children }) => {
                     ) : (
                         // On the auth pages, only offer the other one; phones get
                         // compact buttons so the bar never scrolls sideways
-                        <div className="ml-auto flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-1 sm:gap-2">
+                            {themeButton}
                             {pathname !== '/login' && (
                                 <Button variant="ghost" to="/login" className="h-10 px-3 sm:h-11 sm:px-4">Log in</Button>
                             )}
                             {pathname !== '/register' && (
-                                <Button to="/register" className="h-10 px-3 sm:h-11 sm:px-4">Get started</Button>
+                                // The landing hero has its own big Get started; on phones the
+                                // header can't fit both buttons plus the theme toggle
+                                <Button to="/register" className={cn('h-10 px-3 sm:h-11 sm:px-4', pathname === '/' && 'max-sm:hidden')}>Get started</Button>
                             )}
                         </div>
                     )}
@@ -104,7 +122,7 @@ const AppShell = ({ children }) => {
 
             {user && (
                 <nav
-                    className="ui fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+                    className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
                     aria-label="Main"
                 >
                     <div className="mx-auto grid h-16 max-w-md grid-cols-4">

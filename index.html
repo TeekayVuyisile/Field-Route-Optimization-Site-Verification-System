@@ -5,7 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#0B1220" />
+    <meta name="theme-color" content="#F8FAFC" />
+    <!-- Apply the saved theme before first paint (see src/lib/theme.js) -->
+    <script>
+      try {
+        var t = localStorage.getItem('routeops-theme');
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        if (t === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0B1220');
+        }
+      } catch (e) {}
+    </script>
     <meta name="description" content="RouteOps plans optimized field routes, guides drivers turn by turn, and captures photo evidence at every site." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

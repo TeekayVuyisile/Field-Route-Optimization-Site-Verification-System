@@ -7,7 +7,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { PageLoader } from './components/ui/Loaders';
 import { ToastContainer } from 'react-toastify';
-import './App.css';
 
 // Each page is its own chunk: the map (Leaflet), import (SheetJS) and review
 // (TanStack Table) code only downloads when that page is opened
