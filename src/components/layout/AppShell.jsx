@@ -135,7 +135,10 @@ const TabLink = ({ to, label, icon: Icon }) => (
             isActive ? 'text-accent' : 'text-faint hover:text-fg'
         )}
     >
-        <Icon className="size-6" aria-hidden />
+        {/* Same 36px icon box as the centre "New trip" button so labels line up */}
+        <span className="grid size-9 place-items-center">
+            <Icon className="size-6" aria-hidden />
+        </span>
         {label}
     </NavLink>
 );

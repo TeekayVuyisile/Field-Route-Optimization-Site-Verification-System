@@ -15,6 +15,16 @@
 @import 'bootstrap/dist/css/bootstrap.min.css' layer(legacy);
 @import 'react-toastify/dist/ReactToastify.css' layer(legacy);
 
+/* Tailwind's preflight makes every svg `display: block`; Bootstrap never set
+   it, so on not-yet-migrated pages icons jumped onto their own line above
+   button labels. Restore inline icons everywhere outside migrated `.ui` UI. */
+@layer legacy {
+    svg:not(.ui *) {
+        display: inline;
+        vertical-align: -0.125em;
+    }
+}
+
 /* Dark mode follows a `.dark` class on <html> (set by the theme toggle) */
 @custom-variant dark (&:where(.dark, .dark *));
 

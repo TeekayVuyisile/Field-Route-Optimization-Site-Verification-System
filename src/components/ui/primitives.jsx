@@ -46,6 +46,26 @@ export const Alert = ({ tone = 'info', title, children, action, className }) => 
     );
 };
 
+/** Accessible progress bar; `label` is read by screen readers. */
+export const ProgressBar = ({ value, max, label, tone = 'accent', className }) => {
+    const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+    return (
+        <div
+            role="progressbar"
+            aria-label={label}
+            aria-valuemin={0}
+            aria-valuemax={max}
+            aria-valuenow={value}
+            className={cn('h-2 w-full overflow-hidden rounded-full bg-surface-2', className)}
+        >
+            <div
+                className={cn('h-full rounded-full transition-[width] duration-300', tone === 'success' ? 'bg-success' : 'bg-accent')}
+                style={{ width: `${pct}%` }}
+            />
+        </div>
+    );
+};
+
 export const Skeleton = ({ className }) => (
     <div className={cn('animate-pulse rounded-xl bg-surface-2', className)} aria-hidden />
 );

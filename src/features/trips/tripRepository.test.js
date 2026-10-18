@@ -1,9 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const rpc = vi.fn();
-vi.mock('../../lib/supabase', () => ({ supabase: { rpc: (...args) => rpc(...args) } }));
+// Chainable query-builder stand-in: awaiting it yields `queryResult`
+let queryResult;
+const queryCalls = [];
+const builder = new Proxy({}, {
+    get(_, prop) {
+        if (prop === 'then') return (resolve) => resolve(queryResult);
+        return (...args) => { queryCalls.push([prop, ...args]); return builder; };
+    }
+});
+vi.mock('../../lib/supabase', () => ({
+    supabase: { rpc: (...args) => rpc(...args), from: (table) => { queryCalls.push(['from', table]); return builder; } }
+}));
 
-const { createTripWithSites, saveSiteOrder } = await import('./tripRepository');
+const { createTripWithSites, saveSiteOrder, fetchTripsWithProgress, deleteTrip } = await import('./tripRepository');
+
+describe('fetchTripsWithProgress', () => {
+    beforeEach(() => { queryCalls.length = 0; });
+
+    it('asks the database for total and checked site counts in one request', async () => {
+        queryResult = {
+            data: [{ id: 't1', title: 'Run', site_total: [{ count: 44 }], site_done: [{ count: 25 }] }],
+            error: null
+        };
+        expect(await fetchTripsWithProgress()).toEqual([{ id: 't1', title: 'Run', siteCount: 44, checkedCount: 25 }]);
+        expect(queryCalls).toContainEqual(['select', '*, site_total:sites(count), site_done:sites(count)']);
+        expect(queryCalls).toContainEqual(['eq', 'site_done.is_checked', true]);
+    });
+
+    it('treats missing counts as zero', async () => {
+        queryResult = { data: [{ id: 't1', site_total: [], site_done: [] }], error: null };
+        expect(await fetchTripsWithProgress()).toEqual([{ id: 't1', siteCount: 0, checkedCount: 0 }]);
+    });
+});
+
+describe('deleteTrip', () => {
+    it('reports an RLS-blocked delete instead of pretending it worked', async () => {
+        queryResult = { data: [], error: null };
+        await expect(deleteTrip('t1')).rejects.toThrow("can't delete");
+        queryResult = { data: [{ id: 't1' }], error: null };
+        await expect(deleteTrip('t1')).resolves.toBeUndefined();
+    });
+});
 
 describe('createTripWithSites', () => {
     beforeEach(() => rpc.mockReset());

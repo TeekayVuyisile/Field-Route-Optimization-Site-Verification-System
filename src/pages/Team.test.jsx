@@ -31,7 +31,7 @@ describe('Team page', () => {
 
         expect(await screen.findByRole('heading', { name: 'Ops Team' })).toBeInTheDocument();
         expect(screen.getByLabelText('Email')).toBeInTheDocument();
-        expect(screen.getByText('new@x.co')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Cancel invitation for new@x.co' })).toBeInTheDocument();
         expect(screen.getByLabelText('Role for agent@x.co')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Remove agent@x.co' })).toBeInTheDocument();
         expect(screen.queryByLabelText('Role for me@x.co')).not.toBeInTheDocument();

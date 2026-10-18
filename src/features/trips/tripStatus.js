@@ -9,12 +9,12 @@ export const TRIP_STATUS_LABELS = {
     completed: 'Completed',
 };
 
-// Matches the .status-badge modifiers in App.css
-export const TRIP_STATUS_BADGE = {
-    draft: 'is-neutral',
-    assigned: 'is-accent',
-    in_progress: 'is-warning',
-    completed: 'is-success',
+// Badge tones (components/ui primitives)
+export const TRIP_STATUS_TONE = {
+    draft: 'neutral',
+    assigned: 'accent',
+    in_progress: 'warning',
+    completed: 'success',
 };
 
 /** Status after (un)assigning. Work already started or finished is kept. */
