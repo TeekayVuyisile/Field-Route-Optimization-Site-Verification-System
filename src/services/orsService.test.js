@@ -129,14 +129,40 @@ describe('routing API calls', () => {
             expect(fetchMock).toHaveBeenCalledTimes(2);
         });
 
-        it('gives up after 2 retries with the server message', async () => {
-            fetchMock.mockResolvedValue(jsonResponse(502, { error: 'Routing service unreachable' }));
+        const directions = () => getDirections([[28, -26], [28.1, -26]]);
 
-            const promise = run();
-            const assertion = expect(promise).rejects.toThrow('Routing service unreachable');
+        it('gives up on a 503 after 2 retries with the server message', async () => {
+            fetchMock.mockResolvedValue(jsonResponse(503, { error: 'Routing service busy' }));
+
+            const promise = directions();
+            const assertion = expect(promise).rejects.toThrow('Routing service busy');
             await vi.advanceTimersByTimeAsync(500 + 1500);
             await assertion;
             expect(fetchMock).toHaveBeenCalledTimes(3);
+        });
+
+        // Regression: during an ORS outage, 3 attempts x 20s kept the spinner up for over a minute
+        it.each([502, 504])('retries an upstream %i only once', async (status) => {
+            fetchMock.mockResolvedValue(jsonResponse(status, { error: 'Routing service timed out' }));
+
+            const promise = directions();
+            const assertion = expect(promise).rejects.toThrow('Routing service timed out');
+            await vi.advanceTimersByTimeAsync(500);
+            await assertion;
+            expect(fetchMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('falls back to the local order when optimization is down', async () => {
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+            fetchMock.mockResolvedValue(jsonResponse(504, { error: 'Routing service timed out' }));
+            const sites = [site('far', -26, 28.3), site('near', -26, 28.1)];
+
+            const promise = getOptimizedRoute({ lat: -26, lng: 28 }, sites);
+            await vi.advanceTimersByTimeAsync(500);
+
+            expect((await promise).map(s => s.id)).toEqual(['near', 'far']);
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('nearest-neighbor fallback'));
+            warn.mockRestore();
         });
 
         it('does not retry client errors', async () => {

@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { chunkWaypoints, mergeDirections } from './routeChunks';
+import { chunkWaypoints, mergeDirections, straightLineRoute, isFallbackRoute } from './routeChunks';
+
+describe('straightLineRoute', () => {
+    const coords = [[28, -26], [28.1, -26], [28.2, -26.1]];
+
+    it('draws the stops in order with no turn-by-turn steps', () => {
+        const route = straightLineRoute(coords);
+        expect(route.features[0].geometry.coordinates).toEqual(coords);
+        expect(route.features[0].properties.segments).toEqual([]);
+    });
+
+    it('is recognisable as a fallback (so off-route detection is skipped)', () => {
+        expect(isFallbackRoute(straightLineRoute(coords))).toBe(true);
+        expect(isFallbackRoute(mergeDirections([straightLineRoute(coords)]))).toBe(true);
+    });
+
+    it('treats real or missing routes as not fallback', () => {
+        expect(isFallbackRoute(null)).toBe(false);
+        expect(isFallbackRoute({ features: [{ properties: { segments: [] } }] })).toBe(false);
+    });
+});
 
 const points = (n) => Array.from({ length: n }, (_, i) => [28 + i / 100, -26]);
 

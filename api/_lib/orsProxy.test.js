@@ -34,13 +34,13 @@ describe('ORS proxy endpoints', () => {
                     ? Response.json({ id: userId })
                     : Response.json({ msg: 'invalid JWT' }, { status: 401 });
             }
-            if (url.endsWith('/optimization')) {
+            if (url === 'https://api.heigit.org/vroom/v0') {
                 return Response.json({
                     routes: [{ steps: [{ type: 'start' }, { type: 'job', id: 1 }, { type: 'job', id: 0 }, { type: 'end' }] }],
                     unassigned: [{ id: 2 }]
                 });
             }
-            if (url.endsWith('/v2/directions/driving-car/geojson')) {
+            if (url === 'https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson') {
                 return Response.json({ type: 'FeatureCollection', features: [] });
             }
             throw new Error(`unexpected fetch ${url}`);
@@ -55,7 +55,7 @@ describe('ORS proxy endpoints', () => {
     });
 
     const validOptimize = { start: [28, -26], jobs: [[28.1, -26], [28.2, -26], [28.3, -26]] };
-    const orsCall = () => fetchMock.mock.calls.find(([url]) => url.startsWith('https://api.openrouteservice.org'));
+    const orsCall = () => fetchMock.mock.calls.find(([url]) => url.startsWith('https://api.heigit.org'));
 
     it('rejects requests without a valid session and never calls ORS', async () => {
         expect((await optimize(request(validOptimize, null))).status).toBe(401);
@@ -109,6 +109,25 @@ describe('ORS proxy endpoints', () => {
         const response = await optimize(request(validOptimize));
         expect(response.status).toBe(404);
         expect(await response.json()).toEqual({ error: 'Could not find routable point' });
+    });
+
+    // Regression: the deprecated api.openrouteservice.org host has a cut quota
+    it('calls the current HeiGIT host paths', async () => {
+        await optimize(request(validOptimize));
+        expect(orsCall()[0]).toBe('https://api.heigit.org/vroom/v0');
+        fetchMock.mockClear();
+        await directions(request({ coordinates: [[28, -26], [28.1, -26]] }));
+        expect(orsCall()[0]).toBe('https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson');
+    });
+
+    it('returns 504 when ORS times out, so the client can tell it apart', async () => {
+        fetchMock.mockImplementationOnce(async () => Response.json({ id: userId }));
+        fetchMock.mockImplementationOnce(async () => {
+            throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+        });
+        const response = await optimize(request(validOptimize));
+        expect(response.status).toBe(504);
+        expect(await response.json()).toEqual({ error: 'Routing service timed out' });
     });
 
     it('reports a missing ORS key as a config error', async () => {

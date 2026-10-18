@@ -11,6 +11,7 @@ import {
     FaEdit, FaTrash, FaCrosshairs, FaCamera
 } from 'react-icons/fa';
 import { getOptimizedRoute, getDirections } from '../services/orsService';
+import { straightLineRoute, isFallbackRoute } from '../features/navigation/routeChunks';
 import { useAuth } from '../context/useAuth';
 import { toast } from 'react-toastify';
 import { speak, isOffRoute } from '../utils/navigationUtils';
@@ -176,7 +177,20 @@ const MapView = () => {
                 ...optimizedSites.map(s => [s.longitude, s.latitude])
             ];
 
-            const allSteps = applyRoute(await getDirections(routeCoords));
+            let directions;
+            try {
+                directions = await getDirections(routeCoords);
+            } catch (directionsError) {
+                // Keep the driver moving: the visiting order is already known, so
+                // show it as straight lines and still announce stops on arrival
+                console.error('Directions unavailable:', directionsError);
+                applyRoute(straightLineRoute(routeCoords));
+                toast.warn("Turn-by-turn directions are unavailable right now. Showing your stops in order with straight lines.");
+                if (voiceEnabled) speak(`Stops ordered. First stop: ${target.name}. Turn by turn directions are unavailable.`);
+                return;
+            }
+
+            const allSteps = applyRoute(directions);
 
             if (voiceEnabled && allSteps.length > 0) {
                 const msg = isAutoReroute
@@ -203,7 +217,8 @@ const MapView = () => {
     const handleFix = (p) => {
         const coords = routeData?.features?.[0]?.geometry?.coordinates ?? null;
 
-        if (coords && isOffRoute(p, coords, OFF_ROUTE_M)) {
+        // Straight-line fallback routes don't follow roads, so "off route" is meaningless there
+        if (coords && !isFallbackRoute(routeData) && isOffRoute(p, coords, OFF_ROUTE_M)) {
             optimizeRoute(true, p);
         }
 
@@ -476,7 +491,9 @@ const MapView = () => {
                                 <GeoJSON
                                     key={JSON.stringify(routeData.features[0].geometry.coordinates[0])}
                                     data={routeData}
-                                    style={{ color: '#2563EB', weight: 5, opacity: 0.75 }}
+                                    style={isFallbackRoute(routeData)
+                                        ? { color: '#64748B', weight: 3, opacity: 0.8, dashArray: '8 8' }
+                                        : { color: '#2563EB', weight: 5, opacity: 0.75 }}
                                 />
                             )}
                             {sites.map((site, index) => (

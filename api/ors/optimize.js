@@ -8,7 +8,7 @@ import { validateOptimizeBody } from '../_lib/validate.js';
  * couldn't route are appended at the end so no site is ever dropped.
  */
 export const POST = (request) => handleOrsRequest(request, {
-    path: '/optimization',
+    path: '/vroom/v0',
     validate: validateOptimizeBody,
     buildOrsBody: ({ start, jobs }) => ({
         jobs: jobs.map((location, index) => ({ id: index, location })),

@@ -7,6 +7,9 @@ import { chunkWaypoints, mergeDirections } from '../features/navigation/routeChu
 
 export const ORS_MAX_JOBS = 70;
 const MAX_RETRIES = 2;
+// 502/504 mean ORS itself failed or timed out (each attempt can take the
+// server's full 10s); during an ORS outage more retries only add waiting
+const MAX_UPSTREAM_FAILURE_RETRIES = 1;
 const MAX_RETRY_WAIT_MS = 5000;
 
 export class RoutingError extends Error {
@@ -52,8 +55,10 @@ const callRoutingApi = async (endpoint, body) => {
 
         if (response.ok) return response.json();
 
+        const upstreamFailure = response.status === 502 || response.status === 504;
         const retryable = response.status === 429 || response.status >= 500;
-        if (!retryable || attempt >= MAX_RETRIES) {
+        const maxRetries = upstreamFailure ? MAX_UPSTREAM_FAILURE_RETRIES : MAX_RETRIES;
+        if (!retryable || attempt >= maxRetries) {
             const payload = await response.json().catch(() => ({}));
             throw new RoutingError(payload.error || `Routing request failed (${response.status})`, response.status);
         }
@@ -110,10 +115,20 @@ export const getOptimizedRoute = async (start, sites) => {
         return getNearestNeighborRoute(start, sites);
     }
 
-    const { order } = await callRoutingApi('optimize', {
-        start: [start.lng, start.lat],
-        jobs: sites.map((site) => [site.longitude, site.latitude])
-    });
+    let order;
+    try {
+        ({ order } = await callRoutingApi('optimize', {
+            start: [start.lng, start.lat],
+            jobs: sites.map((site) => [site.longitude, site.latitude])
+        }));
+    } catch (error) {
+        // ORS down or unreachable: a heuristic order beats no order at all.
+        // Auth and validation errors are real bugs, so those still throw.
+        const serviceProblem = error instanceof RoutingError && (error.status === 0 || error.status === 429 || error.status >= 500);
+        if (!serviceProblem) throw error;
+        console.warn(`Optimization unavailable (${error.message}). Using local nearest-neighbor fallback.`);
+        return getNearestNeighborRoute(start, sites);
+    }
 
     // The server appends unroutable jobs, but guard anyway: never drop a site
     const seen = new Set(order);
