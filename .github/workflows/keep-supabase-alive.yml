@@ -1,41 +1,48 @@
 name: Keep Supabase Active
 
-# Supabase free-tier projects pause automatically after 7 days with no API
-# activity. This workflow pings the project's REST API every 3 days (safely
-# under that threshold) so the database never gets paused.
+# Backup for the daily Vercel cron (api/cron/daily). Supabase pauses free
+# projects after about 7 days without database activity, so this calls
+# keepalive() (migration 0010), a real database write. The old ping
+# (GET /rest/v1/) could be answered from cache without touching the database.
+# Note: GitHub disables scheduled workflows after 60 days without repository
+# activity; the Vercel cron has no such limit.
 
 on:
   schedule:
-    - cron: '0 8 */3 * *' # 08:00 UTC, every 3 days
-  workflow_dispatch: {} # allows manually triggering a run from the Actions tab
+    - cron: '17 6 */2 * *' # every other day, 06:17 UTC (off the hour: less queueing)
+  workflow_dispatch: {}
 
 jobs:
   ping-supabase:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned: ubuntu-latest moves to Ubuntu 26 from 2026-10-19
+    timeout-minutes: 5
     steps:
-      - name: Ping Supabase REST endpoint
+      - name: Call keepalive()
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::error::Missing SUPABASE_URL or SUPABASE_ANON_KEY repository secret."
+          # Tolerate whitespace, newlines and a trailing slash pasted into the secrets
+          url=$(printf '%s' "$SUPABASE_URL" | tr -d '[:space:]' | sed 's#/*$##')
+          key=$(printf '%s' "$SUPABASE_ANON_KEY" | tr -d '[:space:]')
+
+          if [ -z "$url" ] || [ -z "$key" ]; then
+            echo "::error::Set the SUPABASE_URL and SUPABASE_ANON_KEY repository secrets."
+            exit 1
+          fi
+          if ! printf '%s' "$url" | grep -Eq '^https://[a-z0-9]+\.supabase\.co$'; then
+            echo "::error::SUPABASE_URL should look like https://<project-ref>.supabase.co (Supabase > Project Settings > API)."
             exit 1
           fi
 
-          status=$(curl -s -o /dev/null -w "%{http_code}" \
-            --max-time 15 \
-            -H "apikey: ${SUPABASE_ANON_KEY}" \
-            "${SUPABASE_URL}/rest/v1/")
-
-          echo "Supabase responded with HTTP ${status}"
-
-          # Anything below 500 means the project answered (even a 401/404 is
-          # a live response from the API gateway/database). Only treat
-          # unreachable/server-error responses as a real failure.
-          if [ "$status" -lt 200 ] || [ "$status" -ge 500 ]; then
-            echo "::error::Supabase project appears unreachable (HTTP ${status})."
+          if ! response=$(curl -sS --fail-with-body --retry 3 --retry-all-errors --max-time 20 \
+              -X POST "$url/rest/v1/rpc/keepalive" \
+              -H "apikey: $key" \
+              -H "Authorization: Bearer $key" \
+              -H "Content-Type: application/json" \
+              -d '{"p_source":"github-actions"}'); then
+            echo "::error::keepalive() call failed: $response"
             exit 1
           fi
 
-          echo "Supabase project is active."
+          echo "Database pinged at $response"
