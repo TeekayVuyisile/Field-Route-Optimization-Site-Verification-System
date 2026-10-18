@@ -20,6 +20,8 @@ const TRIP = { id: 't1', title: 'Soweto run', status: 'in_progress', created_at:
 const SITES = [
     { id: 's1', name: 'Alpha tower', is_checked: true, notes: 'Gate locked, used side entrance', latitude: -26.1, longitude: 28.0 },
     { id: 's2', name: 'Bravo cabinet', is_checked: false, notes: '', latitude: -26.2, longitude: 28.1 },
+    { id: 's4', name: 'Delta mast', is_checked: true, notes: '', latitude: -26.4, longitude: 28.3,
+      checked_at: '2026-10-02T10:42:00Z', check_distance_m: 1240, check_flagged: true, check_note: 'Pin is at the depot' },
     { id: 's3', name: 'Charlie roof', is_checked: false, notes: null, latitude: -26.3, longitude: 28.2 },
 ];
 const PHOTOS = [
@@ -48,10 +50,10 @@ describe('TripReview', () => {
     it('summarises completion and lists every site with notes', async () => {
         renderReport();
         expect(await screen.findByRole('heading', { name: 'Soweto run' })).toBeInTheDocument();
-        expect(screen.getByText('33%')).toBeInTheDocument();
-        expect(within(log()).getAllByRole('listitem')).toHaveLength(3);
+        expect(screen.getByText('50%')).toBeInTheDocument();
+        expect(within(log()).getAllByRole('listitem')).toHaveLength(4);
         expect(screen.getByText('Gate locked, used side entrance')).toBeInTheDocument();
-        expect(photoRepo.fetchSitePhotos).toHaveBeenCalledWith(['s1', 's2', 's3']);
+        expect(photoRepo.fetchSitePhotos).toHaveBeenCalledWith(['s1', 's2', 's4', 's3']);
     });
 
     it('searches names and notes, and filters by status', async () => {
@@ -65,6 +67,18 @@ describe('TripReview', () => {
         fireEvent.click(screen.getByRole('button', { name: /Not visited/ }));
         expect(within(log()).getAllByRole('listitem').map((li) => within(li).getByRole('heading').textContent))
             .toEqual(['Bravo cabinet', 'Charlie roof']);
+    });
+
+    it('shows flagged check-ins with distance and reason, and filters to them', async () => {
+        renderReport();
+        await screen.findByRole('heading', { name: 'Soweto run' });
+        expect(screen.getByText('1 flagged')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /Flagged/ }));
+        const [row] = within(log()).getAllByRole('listitem');
+        expect(within(row).getByRole('heading')).toHaveTextContent('Delta mast');
+        expect(row).toHaveTextContent('1.2 km from the site');
+        expect(row).toHaveTextContent('Reason: Pin is at the depot');
     });
 
     it('opens the map with this trip loaded', async () => {

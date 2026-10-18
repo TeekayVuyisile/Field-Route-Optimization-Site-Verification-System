@@ -8,7 +8,8 @@ import { fetchTripWithSites } from '../features/trips/tripRepository';
 import { fetchSitePhotos, deleteSitePhoto, downloadSitePhoto } from '../features/sites/siteRepository';
 import { buildTripCsv, fileSlug, summarizeReport } from '../features/trips/tripReport';
 import { TRIP_STATUS_LABELS, TRIP_STATUS_TONE } from '../features/trips/tripStatus';
-import { countLabel } from '../lib/format';
+import { countLabel, formatDistance } from '../lib/format';
+import { saveBlob } from '../lib/download';
 import PhotoViewer from '../components/trips/PhotoViewer';
 import Button from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Field';
@@ -19,6 +20,7 @@ const FILTERS = [
     { id: 'all', label: 'All', match: () => true },
     { id: 'visited', label: 'Visited', match: (s) => s.is_checked },
     { id: 'open', label: 'Not visited', match: (s) => !s.is_checked },
+    { id: 'flagged', label: 'Flagged', match: (s) => s.is_checked && s.check_flagged },
 ];
 
 const SORTS = {
@@ -27,15 +29,23 @@ const SORTS = {
     status: { label: 'Not visited first', compare: (a, b) => Number(a.is_checked) - Number(b.is_checked) || a.order - b.order },
 };
 
-const saveBlob = (blob, fileName) => {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+// When and how far from the site the check-in was; the reason if flagged.
+// Check-ins from before verification existed have none of this.
+const CheckInLine = ({ site }) => {
+    const parts = [
+        site.checked_at && `Checked in ${dayjs(site.checked_at).format('D MMM, HH:mm')}`,
+        site.check_distance_m != null
+            ? `${formatDistance(site.check_distance_m)} from the site`
+            : site.check_flagged && site.checked_at ? 'no location' : null,
+    ].filter(Boolean);
+    if (parts.length === 0 && !site.check_note) return null;
+
+    return (
+        <p className={cn('mt-1 text-sm', site.check_flagged ? 'text-warning' : 'text-muted')}>
+            {parts.join(' · ')}
+            {site.check_note && <span className="block text-fg">Reason: {site.check_note}</span>}
+        </p>
+    );
 };
 
 const Stat = ({ label, value, children }) => (
@@ -196,7 +206,11 @@ const TripReview = () => {
                         label={`${summary.visited} of ${countLabel(summary.total, 'site')} visited`}
                     />
                 </Stat>
-                <Stat label="Visited" value={summary.visited} />
+                <Stat label="Visited" value={summary.visited}>
+                    {summary.flagged > 0 && (
+                        <p className="mt-1 text-sm font-semibold text-warning">{summary.flagged} flagged</p>
+                    )}
+                </Stat>
                 <Stat label="Not visited" value={summary.remaining} />
                 <Stat label="Photos" value={summary.photoCount} />
             </div>
@@ -222,16 +236,17 @@ const TripReview = () => {
                                 className="pl-10"
                             />
                         </div>
-                        <div role="group" aria-label="Filter sites" className="inline-flex w-fit rounded-xl bg-surface-2 p-1">
-                            {FILTERS.map((f) => (
+                        <div role="group" aria-label="Filter sites" className="flex flex-wrap gap-1 rounded-xl bg-surface-2 p-1 sm:inline-flex sm:w-fit sm:flex-nowrap sm:gap-0">
+                            {FILTERS.filter((f) => f.id !== 'flagged' || counts.flagged > 0 || filter === 'flagged').map((f) => (
                                 <button
                                     key={f.id}
                                     type="button"
                                     aria-pressed={filter === f.id}
                                     onClick={() => setFilter(f.id)}
                                     className={cn(
-                                        'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg px-3 text-sm font-semibold whitespace-nowrap transition-colors duration-200 sm:h-9',
-                                        filter === f.id ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg'
+                                        'inline-flex h-11 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-semibold whitespace-nowrap transition-colors duration-200 sm:h-9 sm:flex-none',
+                                        filter === f.id ? 'bg-surface text-fg shadow-card' : 'text-muted hover:text-fg',
+                                        f.id === 'flagged' && filter !== f.id && 'text-warning'
                                     )}
                                 >
                                     {f.label}{' '}
@@ -265,8 +280,10 @@ const TripReview = () => {
                                         <div className="flex flex-wrap items-center gap-2">
                                             <h3 className="font-semibold break-words">{site.name}</h3>
                                             <Badge tone={site.is_checked ? 'success' : 'neutral'}>{site.is_checked ? 'Visited' : 'Not visited'}</Badge>
+                                            {site.is_checked && site.check_flagged && <Badge tone="warning">Flagged</Badge>}
                                         </div>
                                         <p className="mt-0.5 font-mono text-xs text-faint">{site.latitude.toFixed(5)}, {site.longitude.toFixed(5)}</p>
+                                        {site.is_checked && <CheckInLine site={site} />}
                                     </div>
                                     <p className={cn('col-start-2 text-sm whitespace-pre-line lg:col-start-auto', site.notes ? 'text-fg' : 'text-faint')}>
                                         {site.notes || 'No notes'}
@@ -282,8 +299,8 @@ const TripReview = () => {
                                                 className="grid size-14 cursor-pointer place-items-center overflow-hidden rounded-lg border border-border bg-surface-2 text-faint transition-opacity duration-200 hover:opacity-80"
                                                 aria-label={`View photo ${index + 1} of ${site.name}`}
                                             >
-                                                {photo.url
-                                                    ? <img src={photo.url} alt="" loading="lazy" className="size-full object-cover" />
+                                                {photo.thumbUrl
+                                                    ? <img src={photo.thumbUrl} alt="" loading="lazy" className="size-full object-cover" />
                                                     : <LuCamera className="size-5" aria-hidden />}
                                             </button>
                                         ))}

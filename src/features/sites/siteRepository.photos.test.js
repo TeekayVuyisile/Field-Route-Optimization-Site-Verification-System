@@ -30,13 +30,23 @@ describe('fetchSitePhotos', () => {
         expect(db.calls).toEqual([]);
     });
 
-    it('attaches signed URLs to the records', async () => {
-        db.result = { data: [{ id: 'p1', storage_path: 'u/s1/a.jpg' }], error: null };
-        storage.createSignedUrls.mockResolvedValue({ data: [{ path: 'u/s1/a.jpg', signedUrl: 'https://signed/a' }], error: null });
+    it('signs photos and thumbnails in one request', async () => {
+        db.result = { data: [
+            { id: 'p1', storage_path: 'u/s1/a.jpg', thumb_path: 'u/s1/a_thumb.jpg' },
+            { id: 'p0', storage_path: 'u/s1/old.jpg', thumb_path: null },
+        ], error: null };
+        storage.createSignedUrls.mockResolvedValue({ data: [
+            { path: 'u/s1/a.jpg', signedUrl: 'https://signed/a' },
+            { path: 'u/s1/a_thumb.jpg', signedUrl: 'https://signed/a_thumb' },
+            { path: 'u/s1/old.jpg', signedUrl: 'https://signed/old' },
+        ], error: null });
 
         const { photos, urlsFailed } = await fetchSitePhotos(['s1']);
         expect(db.calls[0]).toEqual(['in', 'site_id', ['s1']]);
-        expect(photos[0].url).toBe('https://signed/a');
+        expect(storage.createSignedUrls).toHaveBeenCalledTimes(1);
+        expect(photos[0]).toMatchObject({ url: 'https://signed/a', thumbUrl: 'https://signed/a_thumb' });
+        // From before thumbnails: the list falls back to the original
+        expect(photos[1].thumbUrl).toBe('https://signed/old');
         expect(urlsFailed).toBe(false);
     });
 
@@ -46,7 +56,7 @@ describe('fetchSitePhotos', () => {
         storage.createSignedUrls.mockResolvedValue({ data: null, error: new Error('down') });
 
         const { photos, urlsFailed } = await fetchSitePhotos(['s1']);
-        expect(photos).toEqual([{ id: 'p1', storage_path: 'u/s1/a.jpg', url: null }]);
+        expect(photos).toEqual([{ id: 'p1', storage_path: 'u/s1/a.jpg', url: null, thumbUrl: null }]);
         expect(urlsFailed).toBe(true);
     });
 });
@@ -58,10 +68,10 @@ describe('deleteSitePhoto', () => {
         const order = [];
         storage.remove.mockReset().mockImplementation(async () => { order.push('file'); return { error: null }; });
         db.result = { data: null, error: null };
-        await deleteSitePhoto({ id: 'p1', storage_path: 'u/s1/a.jpg' });
+        await deleteSitePhoto({ id: 'p1', storage_path: 'u/s1/a.jpg', thumb_path: 'u/s1/a_thumb.jpg' });
         order.push(...db.calls.map(([, column]) => `record:${column}`));
         expect(order).toEqual(['file', 'record:id']);
-        expect(storage.remove).toHaveBeenCalledWith(['u/s1/a.jpg']);
+        expect(storage.remove).toHaveBeenCalledWith(['u/s1/a.jpg', 'u/s1/a_thumb.jpg']);
     });
 
     it('keeps the record when the file delete is refused', async () => {
@@ -80,13 +90,22 @@ describe('uploadSitePhoto', () => {
         storage.upload.mockReset().mockResolvedValue({ error: null });
     });
 
-    it('stores the file under the user id with a path made from the photo id', async () => {
-        const path = await uploadSitePhoto(photo);
+    it('stores the photo and its thumbnail under the user id, with when and where it was taken', async () => {
+        const thumb = new Blob(['t'], { type: 'image/jpeg' });
+        const path = await uploadSitePhoto({ ...photo, thumb, takenAt: '2026-10-18T08:00:00.000Z', takenLat: -26, takenLng: 28 });
         expect(path).toBe('u1/s1/p1.jpg');
         expect(storage.upload).toHaveBeenCalledWith('u1/s1/p1.jpg', photo.file, { contentType: 'image/jpeg' });
-        expect(db.calls.find(([op]) => op === 'insert')[1]).toEqual([
-            { site_id: 's1', user_id: 'u1', storage_path: 'u1/s1/p1.jpg', file_name: 'IMG_1.HEIC' },
-        ]);
+        expect(storage.upload).toHaveBeenCalledWith('u1/s1/p1_thumb.jpg', thumb, { contentType: 'image/jpeg' });
+        expect(db.calls.find(([op]) => op === 'insert')[1]).toEqual([{
+            site_id: 's1', user_id: 'u1', storage_path: 'u1/s1/p1.jpg', thumb_path: 'u1/s1/p1_thumb.jpg', file_name: 'IMG_1.HEIC',
+            taken_at: '2026-10-18T08:00:00.000Z', taken_lat: -26, taken_lng: 28,
+        }]);
+    });
+
+    it('records no thumbnail when the phone could not make one', async () => {
+        await uploadSitePhoto(photo);
+        expect(storage.upload).toHaveBeenCalledTimes(1);
+        expect(db.calls.find(([op]) => op === 'insert')[1][0]).toMatchObject({ thumb_path: null, taken_at: null });
     });
 
     it('is safe to repeat: an existing file and record are not duplicated', async () => {

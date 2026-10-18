@@ -34,12 +34,15 @@ vi.mock('../services/orsService', () => ({
     getDirections: (...a) => getDirections(...a),
 }));
 
-const siteRepo = { insertSite: vi.fn(), deleteSite: vi.fn(), updateSite: vi.fn(), uploadSitePhoto: vi.fn() };
+const siteRepo = { insertSite: vi.fn(), deleteSite: vi.fn(), updateSite: vi.fn(), uploadSitePhoto: vi.fn(), fetchSitePhotos: vi.fn(), deleteSitePhoto: vi.fn(), downloadSitePhoto: vi.fn() };
 vi.mock('../features/sites/siteRepository', () => ({
     insertSite: (...a) => siteRepo.insertSite(...a),
     deleteSite: (...a) => siteRepo.deleteSite(...a),
     updateSite: (...a) => siteRepo.updateSite(...a),
     uploadSitePhoto: (...a) => siteRepo.uploadSitePhoto(...a),
+    fetchSitePhotos: (...a) => siteRepo.fetchSitePhotos(...a),
+    deleteSitePhoto: (...a) => siteRepo.deleteSitePhoto(...a),
+    downloadSitePhoto: (...a) => siteRepo.downloadSitePhoto(...a),
 }));
 const saveSiteOrder = vi.fn();
 const updateTrip = vi.fn();
@@ -75,6 +78,7 @@ describe('MapView (driver mode)', () => {
         gpsPos = { lat: -26.0, lng: 28.0 };
         useTripStore.getState().loadTrip({ id: 't1', title: 'Soweto run', status: 'assigned' }, SITES.map((s) => ({ ...s })));
         Object.values(siteRepo).forEach((fn) => fn.mockReset().mockResolvedValue(undefined));
+        siteRepo.fetchSitePhotos.mockResolvedValue({ photos: [], urlsFailed: false });
         updateTrip.mockReset().mockResolvedValue({});
         saveSiteOrder.mockReset().mockResolvedValue(undefined);
         getOptimizedRoute.mockReset();
@@ -111,14 +115,46 @@ describe('MapView (driver mode)', () => {
         expect(within(stopPanel()).getByRole('heading', { name: 'Bravo' })).toBeInTheDocument();
     });
 
-    it('checks in, saves at once, starts the trip and moves on to the next stop', async () => {
+    it('checks in on site: records where and when, starts the trip and moves on', async () => {
+        gpsPos = { lat: -26.1003, lng: 28.0, accuracy: 9 }; // ~33 m from Alpha
         renderMap();
         fireEvent.click(screen.getByRole('button', { name: 'Check in' }));
 
-        await waitFor(() => expect(siteRepo.updateSite).toHaveBeenCalledWith('s1', { is_checked: true }));
+        await waitFor(() => expect(siteRepo.updateSite).toHaveBeenCalled());
+        expect(siteRepo.updateSite).toHaveBeenCalledWith('s1', expect.objectContaining({
+            is_checked: true, check_lat: -26.1003, check_lng: 28.0, check_accuracy_m: 9, check_note: null,
+            checked_at: expect.any(String),
+        }));
         expect(updateTrip).toHaveBeenCalledWith('t1', { status: 'in_progress' });
         expect(within(stopPanel()).getByRole('heading', { name: 'Bravo' })).toBeInTheDocument();
         expect(screen.getByText('1 of 3 stops visited')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Pin Alpha' }));
+        expect(within(stopPanel()).getByText(/33 m from the site/)).toBeInTheDocument();
+    });
+
+    it('asks for a reason before a check-in far from the site, which is then flagged', async () => {
+        renderMap(); // the driver is ~11 km from Alpha
+        fireEvent.click(screen.getByRole('button', { name: 'Check in' }));
+
+        const dialog = await screen.findByRole('dialog', { name: /You're 11\.1 km from Alpha/ });
+        expect(siteRepo.updateSite).not.toHaveBeenCalled();
+        fireEvent.change(within(dialog).getByLabelText('Reason (optional)'), { target: { value: 'Pin is at the depot' } });
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Check in anyway' }));
+
+        await waitFor(() => expect(siteRepo.updateSite).toHaveBeenCalledWith('s1', expect.objectContaining({
+            is_checked: true, check_note: 'Pin is at the depot',
+        })));
+        fireEvent.click(screen.getByRole('button', { name: 'Pin Alpha' }));
+        expect(within(stopPanel()).getByText(/Flagged for review/)).toBeInTheDocument();
+    });
+
+    it('cancelling the far-away check-in records nothing', async () => {
+        renderMap();
+        fireEvent.click(screen.getByRole('button', { name: 'Check in' }));
+        fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
+        expect(siteRepo.updateSite).not.toHaveBeenCalled();
+        expect(screen.getByText('0 of 3 stops visited')).toBeInTheDocument();
     });
 
     it('removes a site only after confirming', async () => {
@@ -188,7 +224,23 @@ describe('MapView (driver mode)', () => {
         await waitFor(() => expect(siteRepo.uploadSitePhoto).toHaveBeenCalled());
         expect(siteRepo.uploadSitePhoto.mock.calls[0][0]).toMatchObject({
             id: expect.any(String), userId: 'me', siteId: 's1', fileName: 'IMG_2041.jpg',
+            takenAt: expect.any(String), takenLat: -26.0, takenLng: 28.0,
+            thumb: null, // jsdom can't decode images, so no thumbnail
         });
+    });
+
+    it("shows the stop's uploaded photos and opens them", async () => {
+        siteRepo.fetchSitePhotos.mockResolvedValue({ urlsFailed: false, photos: [
+            { id: 'p1', site_id: 's1', storage_path: 'u/s1/1.jpg', url: 'https://signed/1', thumbUrl: 'https://signed/1t' },
+            { id: 'p2', site_id: 's2', storage_path: 'u/s2/1.jpg', url: 'https://signed/2', thumbUrl: 'https://signed/2t' },
+        ] });
+        renderMap();
+
+        const strip = await screen.findByRole('region', { name: 'Photos of Alpha' });
+        expect(within(strip).getAllByRole('button')).toHaveLength(1);
+        fireEvent.click(within(strip).getByRole('button', { name: 'View photo 1 of Alpha' }));
+        expect(await screen.findByRole('dialog', { name: 'Alpha' })).toBeInTheDocument();
+        expect(siteRepo.fetchSitePhotos).toHaveBeenCalledWith(['s1', 's2', 's3']);
     });
 
     describe('offline', () => {

@@ -32,7 +32,7 @@ export const useGpsPosition = (onFix) => {
 
         if (!quiet) toast.info("Acquiring high-accuracy GPS signal...");
 
-        const toPos = (pos) => ({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const toPos = (pos) => ({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
 
         navigator.geolocation.getCurrentPosition(
             (pos) => {
@@ -73,7 +73,8 @@ export const useGpsPosition = (onFix) => {
         const id = navigator.geolocation.watchPosition(
             (pos) => {
                 const { latitude, longitude, accuracy } = pos.coords;
-                const p = { lat: latitude, lng: longitude };
+                // accuracy (m) travels with the fix: check-ins record it
+                const p = { lat: latitude, lng: longitude, accuracy };
                 if (!shouldAcceptFix(userPosRef.current, p, accuracy)) return;
 
                 acceptPosition(p);

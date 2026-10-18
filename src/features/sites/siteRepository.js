@@ -64,13 +64,20 @@ const isAlreadyStored = (error) => String(error?.statusCode) === '409' || /alrea
  * The path MUST start with the user's id: storage RLS policies key off the
  * first path segment matching auth.uid().
  */
-export const uploadSitePhoto = async ({ id, userId, siteId, file, fileName }) => {
-    const filePath = `${userId}/${siteId}/${id}.${fileExtension(file, fileName)}`;
+export const uploadSitePhoto = async ({ id, userId, siteId, file, thumb, fileName, takenAt, takenLat, takenLng }) => {
+    const folder = `${userId}/${siteId}`;
+    const filePath = `${folder}/${id}.${fileExtension(file, fileName)}`;
+    // Small copy for lists; absent when the phone couldn't decode the photo
+    const thumbPath = thumb ? `${folder}/${id}_thumb.jpg` : null;
 
-    const { error: uploadError } = await supabase.storage
-        .from('site-photos')
-        .upload(filePath, file, { contentType: file.type || 'image/jpeg' });
-    if (uploadError && !isAlreadyStored(uploadError)) throw uploadError;
+    const upload = async (path, blob) => {
+        const { error } = await supabase.storage
+            .from('site-photos')
+            .upload(path, blob, { contentType: blob.type || 'image/jpeg' });
+        if (error && !isAlreadyStored(error)) throw error;
+    };
+    await upload(filePath, file);
+    if (thumb) await upload(thumbPath, thumb);
 
     const { data: existing, error: lookupError } = await supabase
         .from('site_images')
@@ -87,7 +94,11 @@ export const uploadSitePhoto = async ({ id, userId, siteId, file, fileName }) =>
             site_id: siteId,
             user_id: userId,
             storage_path: filePath,
-            file_name: fileName ?? file.name ?? `${id}.jpg`
+            thumb_path: thumbPath,
+            file_name: fileName ?? file.name ?? `${id}.jpg`,
+            taken_at: takenAt ?? null,
+            taken_lat: takenLat ?? null,
+            taken_lng: takenLng ?? null,
         }]);
     if (dbError) throw dbError;
 
@@ -95,7 +106,8 @@ export const uploadSitePhoto = async ({ id, userId, siteId, file, fileName }) =>
 };
 
 /**
- * Photo records for these sites, oldest first, each with a signed `url`.
+ * Photo records for these sites, oldest first, each with signed `url` and
+ * `thumbUrl` (the original when there's no thumbnail).
  * If signing fails the records still come back (url null) with
  * `urlsFailed`, so a report can show the rest of its data.
  * @returns {Promise<{ photos: Array, urlsFailed: boolean }>}
@@ -113,22 +125,31 @@ export const fetchSitePhotos = async (siteIds) => {
     let urls = new Map();
     let urlsFailed = false;
     try {
-        urls = await getSignedPhotoUrls(data.map((photo) => photo.storage_path));
+        // Photos and thumbnails in one request
+        urls = await getSignedPhotoUrls(data.flatMap((photo) => [photo.storage_path, photo.thumb_path].filter(Boolean)));
     } catch (urlError) {
         console.error('Could not sign photo URLs:', urlError);
         urlsFailed = true;
     }
-    return { photos: data.map((photo) => ({ ...photo, url: urls.get(photo.storage_path) ?? null })), urlsFailed };
+    return {
+        photos: data.map((photo) => {
+            const url = urls.get(photo.storage_path) ?? null;
+            // Photos from before thumbnails existed fall back to the original
+            return { ...photo, url, thumbUrl: (photo.thumb_path && urls.get(photo.thumb_path)) || url };
+        }),
+        urlsFailed,
+    };
 };
 
 /**
- * File first, then the record. Order matters: the storage policy that lets a
+ * Files (photo and thumbnail) first, then the record. Order matters: the storage policy that lets a
  * manager delete a teammate's photo looks the file up in `site_images`, so
  * the record must still exist when the file goes. Both policies allow the
  * same people (uploader or team manager).
  */
 export const deleteSitePhoto = async (photo) => {
-    const { error: storageError } = await supabase.storage.from('site-photos').remove([photo.storage_path]);
+    const paths = [photo.storage_path, photo.thumb_path].filter(Boolean);
+    const { error: storageError } = await supabase.storage.from('site-photos').remove(paths);
     if (storageError) throw storageError;
 
     const { error: dbError } = await supabase.from('site_images').delete().eq('id', photo.id);

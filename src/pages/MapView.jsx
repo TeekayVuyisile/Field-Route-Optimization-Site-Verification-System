@@ -10,6 +10,8 @@ import {
 import { getOptimizedRoute, getDirections } from '../services/orsService';
 import { straightLineRoute, isFallbackRoute } from '../features/navigation/routeChunks';
 import { useAuth } from '../context/useAuth';
+import { useTeam } from '../context/useTeam';
+import { assessCheckIn, checkInFields, DEFAULT_CHECKIN_RADIUS_M, UNDO_CHECK_IN } from '../features/checkins/checkIn';
 import { toast } from 'react-toastify';
 import { speak, isOffRoute } from '../utils/navigationUtils';
 import { useGpsPosition } from '../features/navigation/useGpsPosition';
@@ -27,6 +29,9 @@ import { sitePinIcon, userLocationIcon } from '../components/map/mapIcons';
 import InstructionBanner from '../components/map/InstructionBanner';
 import StopCard from '../components/map/StopCard';
 import SiteList from '../components/map/SiteList';
+import CheckInDialog from '../components/map/CheckInDialog';
+import PhotoViewer from '../components/trips/PhotoViewer';
+import { saveBlob } from '../lib/download';
 import SiteFormDialog from '../components/trips/SiteFormDialog';
 import Button from '../components/ui/Button';
 import Spinner from '../components/ui/Spinner';
@@ -87,6 +92,8 @@ const TrackMapSize = () => {
 const MapView = () => {
     const { currentTrip, loadTrip, setCurrentTrip, sites, setSites, updateSite, removeSite } = useTripStore();
     const { user } = useAuth();
+    const { membership } = useTeam();
+    const checkinRadius = membership?.checkinRadiusM ?? DEFAULT_CHECKIN_RADIUS_M;
     const navigate = useNavigate();
     const { tripId } = useParams();
     const [loadError, setLoadError] = useState(null);
@@ -120,6 +127,9 @@ const MapView = () => {
     const [focusRequest, setFocusRequest] = useState(null);
     const [siteDialog, setSiteDialog] = useState(null); // { site } | { site: null } to add
     const [siteToDelete, setSiteToDelete] = useState(null);
+    const [checkInSiteId, setCheckInSiteId] = useState(null); // a check-in that would be flagged
+    const [photos, setPhotos] = useState([]); // uploaded photos of this trip's sites
+    const [viewer, setViewer] = useState(null); // { siteId, index, key }
 
     // Navigation State
     const [navigationSteps, setNavigationSteps] = useState([]);
@@ -139,6 +149,19 @@ const MapView = () => {
 
     const online = useOnline();
     const sync = useOutboxStatus();
+
+    // Uploaded photos for the stop cards. Reloaded when signal returns and
+    // whenever a queued photo finishes uploading (the waiting count drops).
+    const loadedTripId = currentTrip?.id;
+    useEffect(() => {
+        if (!loadedTripId || !online) return;
+        let cancelled = false;
+        const siteIds = useTripStore.getState().sites.map((s) => s.id).filter(isPersistedId);
+        siteRepository.fetchSitePhotos(siteIds)
+            .then((result) => { if (!cancelled) setPhotos(result.photos); })
+            .catch((error) => console.error('Loading photos failed:', error));
+        return () => { cancelled = true; };
+    }, [loadedTripId, online, sync.photos]);
 
     const applyRoute = (directions) => {
         lastHeadsUpIdx.current = -1;
@@ -306,14 +329,37 @@ const MapView = () => {
         if (isPersistedId(id)) outbox.update('site', id, updates);
     };
 
-    // Checking is a deliberate action: send it (and any pending notes for the
-    // site) at once rather than after the debounce
-    const handleToggleChecked = (site) => {
-        updateSite(sites.findIndex(s => s.id === site.id), { is_checked: !site.is_checked });
-        if (isPersistedId(site.id)) outbox.update('site', site.id, { is_checked: !site.is_checked }, { immediate: true });
+    // Checking in is a deliberate action: sent at once (with any pending
+    // notes for the site) rather than after the debounce. `fields` go to the
+    // database, which measures the check-in itself; `estimate` is the same
+    // verdict worked out here, shown until the server's copy is reloaded.
+    const applyCheckIn = (site, fields, estimate) => {
+        updateSite(sites.findIndex(s => s.id === site.id), { ...fields, ...estimate });
+        if (isPersistedId(site.id)) outbox.update('site', site.id, fields, { immediate: true });
         syncTripStatus(useTripStore.getState().sites);
         // After a check-in the panel moves on to the next stop
-        if (!site.is_checked) setSelectedId(null);
+        if (fields.is_checked) setSelectedId(null);
+    };
+
+    const checkIn = (site, reason) => {
+        setCheckInSiteId(null);
+        const { distance, flagged } = assessCheckIn(site, userPos, checkinRadius);
+        applyCheckIn(site, checkInFields(userPos, reason), {
+            check_distance_m: distance == null ? null : Math.round(distance),
+            check_flagged: flagged,
+        });
+    };
+
+    // Too far away or no location: ask first (with a reason) instead of
+    // quietly recording a check-in the manager will see flagged
+    const handleToggleChecked = (site) => {
+        if (site.is_checked) {
+            applyCheckIn(site, UNDO_CHECK_IN, { check_distance_m: null, check_flagged: false });
+        } else if (assessCheckIn(site, userPos, checkinRadius).flagged) {
+            setCheckInSiteId(site.id);
+        } else {
+            checkIn(site, '');
+        }
     };
 
     // First check starts the trip, last check completes it (the database
@@ -397,8 +443,22 @@ const MapView = () => {
         // taken without signal is never lost
         setPreparingPhoto(prev => new Set(prev).add(siteId));
         try {
-            const compressed = await compressImage(file);
-            outbox.add('photo', { id: crypto.randomUUID(), userId: user.id, siteId, file: compressed, fileName: file.name });
+            const [compressed, thumb] = await Promise.all([
+                compressImage(file),
+                compressImage(file, { maxSize: 320, quality: 0.7 }),
+            ]);
+            outbox.add('photo', {
+                id: crypto.randomUUID(),
+                userId: user.id,
+                siteId,
+                file: compressed,
+                // compressImage hands back the original when it can't decode it
+                thumb: thumb === file ? null : thumb,
+                fileName: file.name,
+                takenAt: new Date().toISOString(),
+                takenLat: userPos?.lat ?? null,
+                takenLng: userPos?.lng ?? null,
+            });
             toast.success(navigator.onLine ? 'Photo saved' : "Photo saved on this phone. It'll upload when you have signal.");
         } finally {
             setPreparingPhoto(prev => {
@@ -406,6 +466,27 @@ const MapView = () => {
                 next.delete(siteId);
                 return next;
             });
+        }
+    };
+
+    const downloadPhoto = async (photo) => {
+        try {
+            saveBlob(await siteRepository.downloadSitePhoto(photo), photo.file_name || `photo-${photo.id}.jpg`);
+        } catch {
+            toast.error("Couldn't download the photo. Try again with signal.");
+        }
+    };
+
+    const deletePhoto = async (photo) => {
+        try {
+            await siteRepository.deleteSitePhoto(photo);
+            const remaining = photos.filter((p) => p.id !== photo.id);
+            setPhotos(remaining);
+            if (!remaining.some((p) => p.site_id === photo.site_id)) setViewer(null);
+            toast.success('Photo deleted');
+        } catch (error) {
+            toast.error(navigator.onLine ? "Couldn't delete the photo. Only its uploader or a manager can." : 'Deleting a photo needs signal.');
+            throw error;
         }
     };
 
@@ -458,6 +539,8 @@ const MapView = () => {
     const checkedCount = sites.filter(s => s.is_checked).length;
     // `sync` re-renders this on every outbox change, so these stay current
     const queuedPhotos = outbox.pendingItems('photo');
+    const checkInSite = checkInSiteId && sites.find(s => s.id === checkInSiteId);
+    const viewerSite = viewer && sites.find(s => s.id === viewer.siteId);
     const syncLabel = !online ? 'Offline, saving on this phone'
         : sync.syncing ? 'Saving...'
         : sync.pending > 0 ? 'Waiting to save' : '';
@@ -616,7 +699,9 @@ const MapView = () => {
                                 isNext={selectedSite.id === nextSite?.id}
                                 distance={distanceToSelected}
                                 preparingPhoto={preparingPhoto.has(selectedSite.id)}
-                                queuedPhotos={queuedPhotos.filter((p) => p.siteId === selectedSite.id).length}
+                                photos={photos.filter((p) => p.site_id === selectedSite.id)}
+                                queuedPhotos={queuedPhotos.filter((p) => p.siteId === selectedSite.id)}
+                                onOpenPhoto={(index) => setViewer({ siteId: selectedSite.id, index, key: Date.now() })}
                                 onToggleChecked={() => handleToggleChecked(selectedSite)}
                                 onPhoto={(file) => handleCapturePhoto(selectedSite.id, file)}
                                 onNotesChange={(notes) => handleUpdateSite(selectedSite.id, { notes })}
@@ -655,6 +740,30 @@ const MapView = () => {
                     onOpenChange={(open) => { if (!open) setSiteDialog(null); }}
                     site={siteDialog.site}
                     onSubmit={siteDialog.site ? handleSaveEdit : handleAddSite}
+                />
+            )}
+            {viewerSite && (
+                <PhotoViewer
+                    key={viewer.key}
+                    open
+                    onOpenChange={(open) => { if (!open) setViewer(null); }}
+                    siteName={viewerSite.name}
+                    photos={photos.filter((p) => p.site_id === viewerSite.id)}
+                    startIndex={viewer.index}
+                    onDownload={downloadPhoto}
+                    onDelete={deletePhoto}
+                />
+            )}
+            {checkInSite && (
+                <CheckInDialog
+                    key={checkInSite.id}
+                    open
+                    onOpenChange={(open) => { if (!open) setCheckInSiteId(null); }}
+                    site={checkInSite}
+                    {...assessCheckIn(checkInSite, userPos, checkinRadius)}
+                    radius={checkinRadius}
+                    onRefreshGps={() => refreshGPS()}
+                    onConfirm={(reason) => checkIn(checkInSite, reason)}
                 />
             )}
             <ConfirmDialog
