@@ -1,3 +1,6 @@
+/* Pre-Tailwind styles, kept in the legacy layer (below Tailwind) until this
+   page is migrated. See src/styles/app.css. */
+@layer legacy {
 .landing-page {
     overflow-x: hidden;
 }
@@ -311,4 +314,5 @@
 .landing-footer {
     padding: 1.5rem 0;
     border-top: 1px solid var(--border);
+}
 }

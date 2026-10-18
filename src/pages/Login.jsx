@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Form, Button, Alert, Spinner } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { FaRoute } from 'react-icons/fa';
 import { useAuth } from '../context/useAuth';
-import AuthPanel from '../components/AuthPanel';
-import './Auth.css';
+import AuthLayout from '../components/layout/AuthLayout';
+import Button from '../components/ui/Button';
+import { Field, Input } from '../components/ui/Field';
+import { Alert } from '../components/ui/primitives';
 
 const Login = () => {
     const [email, setEmail] = useState('');
@@ -31,56 +30,47 @@ const Login = () => {
     };
 
     return (
-        <div className="auth-shell">
-            <AuthPanel
-                tagline="Welcome back"
-                headline="Sign in to pick up your next trip."
-            />
-            <div className="auth-form-side">
-                <motion.div
-                    className="auth-form-card"
-                    initial={{ opacity: 0, y: 18 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                >
-                    <div className="auth-mobile-brand d-lg-none">
-                        <span className="brand-mark"><FaRoute /></span> RouteOps
-                    </div>
-                    <h2 className="auth-title">Log In</h2>
-                    <p className="auth-subtitle">Enter your credentials to continue.</p>
+        <AuthLayout eyebrow="Welcome back" headline="Sign in to pick up your next trip.">
+            <h2 className="text-2xl font-bold tracking-tight">Log in</h2>
+            <p className="mt-1 text-muted">Enter your email and password to continue.</p>
 
-                    {error && <Alert variant="danger">{error}</Alert>}
+            {error && <Alert tone="danger" className="mt-6">{error}</Alert>}
 
-                    <Form onSubmit={handleSubmit}>
-                        <Form.Group className="mb-3">
-                            <Form.Label>Email Address</Form.Label>
-                            <Form.Control
-                                type="email"
-                                required
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Form.Group className="mb-4">
-                            <Form.Label>Password</Form.Label>
-                            <Form.Control
-                                type="password"
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                            />
-                        </Form.Group>
-                        <Button disabled={loading} className="w-100" type="submit" size="lg">
-                            {loading ? <Spinner size="sm" animation="border" className="me-2" /> : null}
-                            {loading ? 'Logging in...' : 'Log In'}
-                        </Button>
-                    </Form>
-                    <div className="auth-switch">
-                        Don't have an account? <Link to="/register">Register</Link>
-                    </div>
-                </motion.div>
-            </div>
-        </div>
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                <Field label="Email address">
+                    {(field) => (
+                        <Input
+                            {...field}
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                    )}
+                </Field>
+                <Field label="Password">
+                    {(field) => (
+                        <Input
+                            {...field}
+                            type="password"
+                            autoComplete="current-password"
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                        />
+                    )}
+                </Field>
+                <Button type="submit" size="lg" className="w-full" loading={loading}>
+                    {loading ? 'Logging in...' : 'Log in'}
+                </Button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-muted">
+                Don't have an account?{' '}
+                <Link to="/register" className="font-semibold text-accent hover:underline">Create one</Link>
+            </p>
+        </AuthLayout>
     );
 };
 

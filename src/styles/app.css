@@ -1,0 +1,147 @@
+/* ==========================================================================
+   RouteOps styles entry
+   --------------------------------------------------------------------------
+   Layer order matters. CSS outside any @layer beats ALL layered CSS, so
+   Bootstrap and the pre-Tailwind stylesheets go in a `legacy` layer BELOW
+   Tailwind's components/utilities: on new pages Tailwind always wins.
+   Bootstrap and the old stylesheets share that ONE layer, in their original
+   load order, so they still resolve against each other by specificity as
+   before (separate layers would let e.g. index.css's `a { color }` beat
+   Bootstrap's `.btn-primary`). Removed once every page is migrated.
+   ========================================================================== */
+@layer theme, base, legacy, components, utilities;
+
+@import 'tailwindcss';
+@import 'bootstrap/dist/css/bootstrap.min.css' layer(legacy);
+@import 'react-toastify/dist/ReactToastify.css' layer(legacy);
+
+/* Dark mode follows a `.dark` class on <html> (set by the theme toggle) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* --------------------------------------------------------------------------
+   Design tokens. Semantic names, raw values below in :root / .dark so one
+   utility (bg-surface, text-muted...) works in both themes.
+   Palette: Deep Navy ink + one Electric Blue accent (from the original
+   design), Swiss/minimal per the UI/UX Pro Max design system.
+   -------------------------------------------------------------------------- */
+@theme inline {
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+    --color-canvas: var(--ro-canvas);
+    --color-surface: var(--ro-surface);
+    --color-surface-2: var(--ro-surface-2);
+    --color-border: var(--ro-border);
+    --color-border-strong: var(--ro-border-strong);
+    --color-fg: var(--ro-fg);
+    --color-muted: var(--ro-muted);
+    --color-faint: var(--ro-faint);
+    --color-ink: var(--ro-ink);
+
+    --color-accent: var(--ro-accent);
+    --color-accent-hover: var(--ro-accent-hover);
+    --color-accent-soft: var(--ro-accent-soft);
+    --color-accent-fg: var(--ro-accent-fg);
+
+    --color-success: var(--ro-success);
+    --color-success-soft: var(--ro-success-soft);
+    --color-warning: var(--ro-warning);
+    --color-warning-soft: var(--ro-warning-soft);
+    --color-danger: var(--ro-danger);
+    --color-danger-soft: var(--ro-danger-soft);
+
+    --shadow-card: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 1px rgb(15 23 42 / 0.04);
+    --shadow-raised: 0 8px 24px rgb(15 23 42 / 0.08), 0 2px 8px rgb(15 23 42 / 0.06);
+    --shadow-overlay: 0 20px 48px rgb(15 23 42 / 0.18), 0 8px 20px rgb(15 23 42 / 0.10);
+
+    --animate-fade-in: fade-in 200ms ease-out;
+}
+
+:root {
+    --ro-canvas: #F8FAFC;
+    --ro-surface: #FFFFFF;
+    --ro-surface-2: #F1F5F9;
+    --ro-border: #E2E8F0;
+    --ro-border-strong: #CBD5E1;
+    --ro-fg: #0F172A;
+    --ro-muted: #475569;   /* 7.5:1 on white */
+    --ro-faint: #64748B;   /* 4.8:1 on white: smallest text that still passes AA */
+    --ro-ink: #0B1220;
+
+    --ro-accent: #2563EB;
+    --ro-accent-hover: #1D4ED8;
+    --ro-accent-soft: #EFF4FF;
+    --ro-accent-fg: #FFFFFF;
+
+    --ro-success: #047857;
+    --ro-success-soft: #E7F9F1;
+    --ro-warning: #B45309;
+    --ro-warning-soft: #FEF3E2;
+    --ro-danger: #BE123C;
+    --ro-danger-soft: #FDECEF;
+}
+
+.dark {
+    color-scheme: dark;
+    --ro-canvas: #0B1220;
+    --ro-surface: #111A2E;
+    --ro-surface-2: #17223A;
+    --ro-border: #22304B;
+    --ro-border-strong: #2F3F5E;
+    --ro-fg: #E5EAF2;
+    --ro-muted: #A7B3C6;
+    --ro-faint: #8693A8;
+    --ro-ink: #050A14;
+
+    --ro-accent: #3B82F6;
+    --ro-accent-hover: #60A5FA;
+    --ro-accent-soft: rgb(59 130 246 / 0.16);
+    --ro-accent-fg: #FFFFFF;
+
+    --ro-success: #34D399;
+    --ro-success-soft: rgb(52 211 153 / 0.14);
+    --ro-warning: #FBBF24;
+    --ro-warning-soft: rgb(251 191 36 / 0.14);
+    --ro-danger: #FB7185;
+    --ro-danger-soft: rgb(251 113 133 / 0.14);
+}
+
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* The legacy layer sits ABOVE Tailwind's preflight (so old pages keep their
+   look), which means its element defaults (blue underlined links, heading
+   colours and weights, paragraph margins) would leak into new UI.
+   Migrated pages and the new shell carry `.ui`; inside it, preflight's
+   defaults are restored. Removed together with Bootstrap. */
+@layer components {
+    .ui :where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd, ul, ol, label) { margin: 0; }
+    .ui :where(h1, h2, h3, h4, h5, h6) { font-size: inherit; font-weight: inherit; line-height: inherit; color: inherit; }
+    .ui :where(ul, ol) { padding: 0; list-style: none; }
+    .ui :where(a) { color: inherit; text-decoration: inherit; }
+    .ui :where(button, input, select, textarea) { font: inherit; color: inherit; }
+}
+
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    /* Keyboard focus is always visible; mouse clicks don't leave rings */
+    :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+        outline: 2px solid var(--ro-accent);
+        outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+}

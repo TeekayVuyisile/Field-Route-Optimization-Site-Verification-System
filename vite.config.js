@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // Runs the Web-standard handlers in api/ (export GET/POST(request)) during
 // `npm run dev`, mirroring how Vercel routes /api/* in production. Without
@@ -54,7 +55,7 @@ const vercelApiDev = () => ({
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), vercelApiDev()],
+  plugins: [react(), tailwindcss(), vercelApiDev()],
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.js'],
