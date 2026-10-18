@@ -45,6 +45,9 @@ const Navigation = () => {
                                 <Nav.Link as={Link} to="/map" className={`nav-pill ${isActive('/map') ? 'is-active' : ''}`}>
                                     Map View
                                 </Nav.Link>
+                                <Nav.Link as={Link} to="/team" className={`nav-pill ${isActive('/team') ? 'is-active' : ''}`}>
+                                    Team
+                                </Nav.Link>
                                 <div className="user-chip">
                                     <span className="user-chip-avatar">{user.email?.[0]?.toUpperCase()}</span>
                                     <span className="user-chip-email d-none d-xl-inline">{user.email}</span>

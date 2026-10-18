@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, useLocation, useParams } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { TeamProvider } from './context/TeamContext';
 import Navigation from './components/Navigation';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -11,6 +12,7 @@ import CreateTrip from './pages/CreateTrip';
 import TripDetails from './pages/TripDetails';
 import MapView from './pages/MapView';
 import TripReview from './pages/TripReview';
+import Team from './pages/Team';
 import { ToastContainer } from 'react-toastify';
 import './App.css';
 
@@ -62,6 +64,14 @@ const AppRoutes = () => {
           }
         />
         <Route
+          path="/team"
+          element={
+            <ProtectedRoute>
+              <Team />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/map"
           element={
             <ProtectedRoute>
@@ -85,11 +95,13 @@ const AppRoutes = () => {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <Navigation />
-        <AppRoutes />
-        <ToastContainer position="bottom-right" />
-      </Router>
+      <TeamProvider>
+        <Router>
+          <Navigation />
+          <AppRoutes />
+          <ToastContainer position="bottom-right" />
+        </Router>
+      </TeamProvider>
     </AuthProvider>
   );
 }
