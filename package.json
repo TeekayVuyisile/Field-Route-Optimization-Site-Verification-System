@@ -14,7 +14,6 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
     "@tanstack/react-table": "^8.21.3",
-    "axios": "^1.16.0",
     "bootstrap": "^5.3.8",
     "dayjs": "^1.11.20",
     "framer-motion": "^12.38.0",
