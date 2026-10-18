@@ -11,7 +11,7 @@ import useTripStore from '../store/useTripStore';
 import { useNavigate } from 'react-router-dom';
 import { FaTrash, FaExchangeAlt, FaPlus, FaSave, FaChevronUp, FaChevronDown } from 'react-icons/fa';
 import ManualSiteModal from '../components/ManualSiteModal';
-import { validateCoordinates } from '../utils/validation';
+import { validateCoordinates, hasReadableCoordinates } from '../utils/validation';
 import { createTripWithSites } from '../features/trips/tripRepository';
 import { toast } from 'react-toastify';
 
@@ -107,6 +107,11 @@ const TripDetails = () => {
 
     const handleSaveTrip = async () => {
         if (!currentTrip || sites.length === 0) return;
+
+        if (!sites.every(hasReadableCoordinates)) {
+            toast.error("Some sites have coordinates that couldn't be read. Fix or delete them before saving.");
+            return;
+        }
 
         // Already saved (e.g. user came back to this page): don't create a duplicate
         if (currentTrip.id) {
