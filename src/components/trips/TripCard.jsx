@@ -4,6 +4,7 @@ import Button from '../ui/Button';
 import { Card, Badge, ProgressBar } from '../ui/primitives';
 import { Select } from '../ui/Field';
 import { TRIP_STATUS_LABELS, TRIP_STATUS_TONE } from '../../features/trips/tripStatus';
+import { countLabel } from '../../lib/format';
 
 /**
  * One trip on the dashboard: status, progress, assignee, and actions.
@@ -41,7 +42,7 @@ const TripCard = ({
                     value={trip.checkedCount}
                     max={trip.siteCount}
                     tone={done ? 'success' : 'accent'}
-                    label={`${trip.title}: ${trip.checkedCount} of ${trip.siteCount} sites checked`}
+                    label={`${trip.title}: ${trip.checkedCount} of ${countLabel(trip.siteCount, 'site')} checked`}
                 />
             </div>
 

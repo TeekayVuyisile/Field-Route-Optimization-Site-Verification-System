@@ -100,7 +100,8 @@ function App() {
           <AppShell>
             <AppRoutes />
           </AppShell>
-          <ToastContainer position="bottom-right" />
+          {/* Top: at the bottom, phone toasts covered the tab bar and Check in */}
+          <ToastContainer position="top-center" autoClose={3500} limit={3} />
         </Router>
       </TeamProvider>
     </AuthProvider>

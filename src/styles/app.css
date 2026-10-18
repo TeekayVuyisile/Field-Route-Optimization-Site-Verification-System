@@ -12,8 +12,7 @@
 @layer theme, base, legacy, components, utilities;
 
 @import 'tailwindcss';
-@import 'bootstrap/dist/css/bootstrap.min.css' layer(legacy);
-@import 'react-toastify/dist/ReactToastify.css' layer(legacy);
+/* Bootstrap + toastify: src/styles/legacy.css, imported right after this */
 
 /* Tailwind's preflight makes every svg `display: block`; Bootstrap never set
    it, so on not-yet-migrated pages icons jumped onto their own line above

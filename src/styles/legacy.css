@@ -1,0 +1,6 @@
+/* Bootstrap and toastify in the legacy layer (order declared in app.css).
+   Kept out of app.css so Vite's PostCSS pass, not Tailwind's import inliner,
+   loads them: that pass scopes Bootstrap's !important utilities away from
+   `.ui` markup (scripts/postcss-scope-bootstrap-utilities.js). */
+@import 'bootstrap/dist/css/bootstrap.min.css' layer(legacy);
+@import 'react-toastify/dist/ReactToastify.css' layer(legacy);

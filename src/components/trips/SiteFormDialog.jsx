@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { Dialog } from '../ui/Dialog';
 import Button from '../ui/Button';
 import { Field, Input } from '../ui/Field';
-import { parseCoordinate } from '../../utils/validation';
+import { parseCoordinate, validateCoordinates } from '../../utils/validation';
 import { createLocalId } from '../../features/sites/siteIds';
 import { withValidation } from '../../features/import/spreadsheet';
+import { Alert } from '../ui/primitives';
 
 const FORMAT_HINT = `Decimal (-26.2041 or -26,2041) or DMS (26°12'15"S)`;
 
@@ -29,6 +30,9 @@ const SiteFormDialog = ({ open, onOpenChange, site, onSubmit }) => {
         lng: Number.isNaN(lngValue) ? FORMAT_HINT : null,
     };
     const hasErrors = Object.values(errors).some(Boolean);
+    // Readable but not in South Africa: a warning, not an error (some teams
+    // do work over the border), with a one-tap fix for swapped columns
+    const region = errors.lat || errors.lng ? null : validateCoordinates(latValue, lngValue);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -70,6 +74,17 @@ const SiteFormDialog = ({ open, onOpenChange, site, onSubmit }) => {
                         )}
                     </Field>
                 </div>
+                {region?.isInverted ? (
+                    <Alert
+                        tone="warning"
+                        title="Latitude and longitude look swapped"
+                        action={<Button variant="secondary" size="sm" onClick={() => { setLat(lng); setLng(lat); }}>Swap them</Button>}
+                    />
+                ) : region && !region.isValid ? (
+                    <Alert tone="warning" title="This point is outside South Africa">
+                        Check the coordinates. You can still save it.
+                    </Alert>
+                ) : null}
                 <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
                     <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
                     <Button type="submit">{site ? 'Save changes' : 'Add site'}</Button>
