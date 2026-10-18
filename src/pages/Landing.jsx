@@ -1,221 +1,144 @@
-import { Container, Row, Col, Button } from 'react-bootstrap';
-import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
 import {
-    FaRoute,
-    FaCamera,
-    FaFileInvoice,
-    FaSatellite,
-    FaUndoAlt,
-    FaVolumeUp,
-    FaArrowRight,
-    FaMapMarkerAlt
-} from 'react-icons/fa';
-import './Landing.css';
+    LuArrowRight, LuCamera, LuCheck, LuFileSpreadsheet, LuMapPin, LuNavigation, LuRoute, LuSatellite,
+    LuShieldCheck, LuUsers, LuVolume2
+} from 'react-icons/lu';
+import { useAuth } from '../context/useAuth';
+import Button from '../components/ui/Button';
+import Logo from '../components/ui/Logo';
 
-const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: { opacity: 1, transition: { staggerChildren: 0.12 } }
-};
-
-const itemVariants = {
-    hidden: { y: 22, opacity: 0 },
-    visible: { y: 0, opacity: 1, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }
-};
-
-const steps = [
-    { step: 1, title: 'Import', text: 'Upload a CSV or Excel file of site coordinates.' },
-    { step: 2, title: 'Optimize', text: 'RouteOps sequences the fastest path between stops.' },
-    { step: 3, title: 'Execute', text: 'Follow voice guidance and capture site evidence.' },
-    { step: 4, title: 'Report', text: 'Export verification logs for management review.' }
+const STEPS = [
+    { title: 'Import', text: 'Drop in a CSV or Excel sheet of sites, or add them by hand. Bad coordinates are caught before you save.' },
+    { title: 'Optimize', text: 'RouteOps orders the stops for the shortest drive from wherever you are.' },
+    { title: 'Drive', text: 'Turn-by-turn voice guidance, then check in and take photos at each stop.' },
+    { title: 'Report', text: 'See what was visited, read the field notes and photos, and export a CSV.' },
 ];
 
-const features = [
-    {
-        icon: <FaRoute />,
-        title: 'Route Optimization',
-        description: 'Dynamic TSP optimization powered by OpenRouteService, minimizing drive time across every stop on the trip.',
-        featured: true
-    },
-    {
-        icon: <FaSatellite />,
-        title: 'Field-Grade GPS',
-        description: 'Signal filtering and jitter smoothing keep your position accurate even between tall structures.'
-    },
-    {
-        icon: <FaUndoAlt />,
-        title: 'Auto-Pilot Rerouting',
-        description: 'Off-route detection triggers an automatic recalculation from wherever you actually are.'
-    },
-    {
-        icon: <FaCamera />,
-        title: 'Photo Evidence',
-        description: 'Background photo sync to secure storage, with multiple images supported per site.'
-    },
-    {
-        icon: <FaVolumeUp />,
-        title: 'Hands-Free Voice',
-        description: 'Turn-by-turn audio guidance so your team can keep their eyes on the road.'
-    },
-    {
-        icon: <FaFileInvoice />,
-        title: 'Professional Reporting',
-        description: 'Completion analytics and CSV export, ready for a client or compliance review.',
-        wide: true
-    }
+const FEATURES = [
+    { icon: LuRoute, title: 'Route optimization', text: 'Stop order from OpenRouteService, with a local fallback so a routing outage never leaves a driver without a plan.' },
+    { icon: LuVolume2, title: 'Hands-free guidance', text: 'Spoken turn-by-turn directions and arrival alerts, so eyes stay on the road.' },
+    { icon: LuSatellite, title: 'Field-grade GPS', text: 'Jumpy fixes are filtered out, and going off route recalculates from where you actually are.' },
+    { icon: LuCamera, title: 'Photo evidence', text: 'Photos per site go straight to private storage that only your team can open.' },
+    { icon: LuUsers, title: 'Teams', text: 'Managers plan and assign trips; agents see their own and drive them. Progress shows up live.' },
+    { icon: LuFileSpreadsheet, title: 'Reports', text: 'Completion, notes and photos for every site, with a CSV export that opens cleanly in Excel.' },
 ];
 
-const RouteGraphic = () => (
-    <motion.div
-        className="route-graphic"
-        initial={{ opacity: 0, scale: 0.92 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-    >
-        <svg viewBox="0 0 400 320" className="route-graphic-svg" fill="none">
-            <motion.path
-                d="M50,250 C110,90 170,270 220,150 C255,65 300,120 350,70"
-                stroke="#2563EB"
-                strokeWidth="4"
-                strokeLinecap="round"
-                initial={{ pathLength: 0 }}
-                animate={{ pathLength: 1 }}
-                transition={{ duration: 1.6, ease: 'easeInOut', delay: 0.3 }}
-            />
-            <circle cx="50" cy="250" r="8" fill="#10B981" />
-            <circle cx="220" cy="150" r="8" fill="#fff" stroke="#94A3B8" strokeWidth="3" />
-            <circle cx="350" cy="70" r="10" fill="#2563EB" />
-            <circle cx="350" cy="70" r="16" fill="#2563EB" opacity="0.18" />
-        </svg>
-        <motion.div
-            className="route-chip"
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 1.4 }}
-        >
-            <span className="route-chip-icon"><FaMapMarkerAlt /></span>
-            <div>
-                <strong>4 stops</strong>
-                <small>Fastest sequence found</small>
+// The hero shows the product itself: a route and the stop card a driver sees
+const HeroPreview = () => (
+    <div className="relative mx-auto w-full max-w-md" aria-hidden>
+        <div className="overflow-hidden rounded-3xl border border-border bg-surface-2 shadow-overlay">
+            <svg viewBox="0 0 400 260" className="block w-full" fill="none">
+                <defs>
+                    <pattern id="landing-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+                        <path d="M28 0H0V28" stroke="currentColor" className="text-border" strokeWidth="1" />
+                    </pattern>
+                </defs>
+                <rect width="400" height="260" fill="url(#landing-grid)" />
+                <path
+                    d="M48 214 C110 70 168 236 222 132 C256 64 304 104 352 54"
+                    stroke="#2563EB"
+                    strokeWidth="5"
+                    strokeLinecap="round"
+                />
+                <circle cx="48" cy="214" r="9" fill="#2563EB" stroke="#fff" strokeWidth="3" />
+                <circle cx="150" cy="150" r="9" fill="#047857" stroke="#fff" strokeWidth="3" />
+                <circle cx="222" cy="132" r="11" fill="#2563EB" stroke="#fff" strokeWidth="3" />
+                <circle cx="352" cy="54" r="9" fill="#64748B" stroke="#fff" strokeWidth="3" />
+            </svg>
+        </div>
+        <div className="animate-fade-in relative -mt-16 mr-4 ml-auto w-72 rounded-2xl border border-border bg-surface p-4 shadow-raised">
+            <div className="flex items-center gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-accent-soft px-2 py-0.5 text-accent">Next stop</span>
+                <span className="text-faint">Stop 2 of 4</span>
             </div>
-        </motion.div>
-    </motion.div>
+            <p className="mt-1.5 font-bold">Melrose Arch POP</p>
+            <p className="text-sm text-muted">1.2 km away</p>
+            <div className="mt-3 flex h-10 items-center justify-center gap-2 rounded-xl bg-accent text-sm font-semibold text-accent-fg">
+                <LuCheck className="size-4" /> Check in
+            </div>
+        </div>
+    </div>
 );
 
 const Landing = () => {
+    const { user } = useAuth();
+
     return (
-        <div className="landing-page">
-            {/* Hero */}
-            <header className="hero-section">
-                <Container>
-                    <Row className="align-items-center gy-5">
-                        <Col lg={6}>
-                            <motion.div
-                                initial={{ x: -40, opacity: 0 }}
-                                animate={{ x: 0, opacity: 1 }}
-                                transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-                            >
-                                <h1 className="hero-headline">
-                                    Plan smarter routes.<br />Verify every site.
-                                </h1>
-                                <p className="hero-subtext">
-                                    Optimize field visits, capture photo evidence, and guide your team hands-free from one dashboard.
-                                </p>
-                                <div className="d-flex flex-wrap gap-3">
-                                    <Button as={Link} to="/register" variant="primary" size="lg" className="px-4">
-                                        Get Started <FaArrowRight className="ms-2" />
-                                    </Button>
-                                    <Button as={Link} to="/login" variant="outline-secondary" size="lg" className="px-4">
-                                        Log In
-                                    </Button>
-                                </div>
-                            </motion.div>
-                        </Col>
-                        <Col lg={6} className="d-none d-lg-block">
-                            <RouteGraphic />
-                        </Col>
-                    </Row>
-                </Container>
-            </header>
-
-            {/* How It Works */}
-            <section className="steps-section">
-                <Container>
-                    <h2 className="section-heading text-center">How It Works</h2>
-                    <div className="steps-strip">
-                        {steps.map((item) => (
-                            <motion.div
-                                key={item.step}
-                                className="step-node"
-                                initial={{ opacity: 0, y: 16 }}
-                                whileInView={{ opacity: 1, y: 0 }}
-                                viewport={{ once: true, amount: 0.5 }}
-                                transition={{ duration: 0.45, delay: item.step * 0.08 }}
-                            >
-                                <div className="step-circle">{item.step}</div>
-                                <h5>{item.title}</h5>
-                                <p>{item.text}</p>
-                            </motion.div>
-                        ))}
+        <div className="overflow-x-clip">
+            <section className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-12 px-4 pt-12 pb-16 sm:px-6 sm:pt-20 lg:grid-cols-2 lg:pb-24">
+                <div className="animate-fade-in">
+                    <p className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-sm font-semibold text-muted">
+                        <LuMapPin className="size-4 text-accent" aria-hidden /> Built for field teams in South Africa
+                    </p>
+                    <h1 className="mt-5 text-4xl font-extrabold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+                        Plan smarter routes. <span className="text-accent">Verify every site.</span>
+                    </h1>
+                    <p className="mt-5 max-w-xl text-lg text-muted">
+                        Import your sites, get the fastest visiting order, guide drivers turn by turn and collect photo evidence, from one app that works on any phone.
+                    </p>
+                    <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                        {user ? (
+                            <Button size="lg" to="/dashboard">Open your trips <LuArrowRight className="size-5" aria-hidden /></Button>
+                        ) : (
+                            <>
+                                <Button size="lg" to="/register">Get started <LuArrowRight className="size-5" aria-hidden /></Button>
+                                <Button size="lg" variant="secondary" to="/login">Log in</Button>
+                            </>
+                        )}
                     </div>
-                </Container>
+                </div>
+                <HeroPreview />
             </section>
 
-            {/* Features Bento */}
-            <section className="features-section">
-                <Container>
-                    <h2 className="section-heading text-center">Built For Reliability In The Field</h2>
-                    <motion.div
-                        className="features-bento"
-                        variants={containerVariants}
-                        initial="hidden"
-                        whileInView="visible"
-                        viewport={{ once: true, amount: 0.15 }}
-                    >
-                        {features.map((feature, index) => (
-                            <motion.div
-                                key={index}
-                                variants={itemVariants}
-                                className={`bento-feature ${feature.featured ? 'is-featured' : ''} ${feature.wide ? 'is-wide' : ''}`}
-                            >
-                                <div className="bento-icon">{feature.icon}</div>
-                                <h5>{feature.title}</h5>
-                                <p>{feature.description}</p>
-                            </motion.div>
+            <section aria-labelledby="how-heading" className="border-y border-border bg-surface">
+                <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
+                    <h2 id="how-heading" className="text-3xl font-bold tracking-tight">How it works</h2>
+                    <ol className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+                        {STEPS.map((step, index) => (
+                            <li key={step.title}>
+                                <span className="grid size-10 place-items-center rounded-full bg-accent text-sm font-bold text-accent-fg">{index + 1}</span>
+                                <h3 className="mt-4 text-lg font-bold">{step.title}</h3>
+                                <p className="mt-1 text-muted">{step.text}</p>
+                            </li>
                         ))}
-                    </motion.div>
-                </Container>
+                    </ol>
+                </div>
             </section>
 
-            {/* CTA */}
-            <section className="cta-section">
-                <Container>
-                    <motion.div
-                        className="cta-panel"
-                        initial={{ opacity: 0, y: 20 }}
-                        whileInView={{ opacity: 1, y: 0 }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 0.5 }}
-                    >
-                        <h2>Ready to optimize your field operations?</h2>
-                        <p>Join field teams already using RouteOps for site verification.</p>
-                        <Button as={Link} to="/register" variant="light" size="lg" className="px-4 fw-bold">
-                            Get Started
-                        </Button>
-                    </motion.div>
-                </Container>
+            <section aria-labelledby="features-heading" className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20">
+                <h2 id="features-heading" className="text-3xl font-bold tracking-tight">Built for real conditions in the field</h2>
+                <p className="mt-2 max-w-2xl text-muted">Weak signal, big routes and coordinates from every kind of spreadsheet.</p>
+                <ul className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {FEATURES.map(({ icon: Icon, title, text }) => (
+                        <li key={title} className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+                            <span className="grid size-11 place-items-center rounded-xl bg-accent-soft text-accent">
+                                <Icon className="size-5" aria-hidden />
+                            </span>
+                            <h3 className="mt-4 font-bold">{title}</h3>
+                            <p className="mt-1 text-sm text-muted">{text}</p>
+                        </li>
+                    ))}
+                </ul>
             </section>
 
-            <footer className="landing-footer">
-                <Container>
-                    <div className="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div className="d-flex align-items-center gap-2">
-                            <FaRoute className="text-primary" />
-                            <span className="fw-bold">RouteOps</span>
-                        </div>
-                        <div className="text-muted small">© 2026 RouteOps. All rights reserved.</div>
+            <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 sm:pb-20">
+                <div className="flex flex-col items-start gap-6 rounded-3xl bg-ink p-8 text-white sm:p-12 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Ready for your next site run?</h2>
+                        <p className="mt-2 flex items-center gap-2 text-white/70">
+                            <LuShieldCheck className="size-5 shrink-0" aria-hidden /> Your team's trips and photos stay private to your team.
+                        </p>
                     </div>
-                </Container>
+                    <Button size="lg" to={user ? '/dashboard' : '/register'} className="shrink-0">
+                        {user ? 'Open your trips' : 'Create your team'} <LuNavigation className="size-5" aria-hidden />
+                    </Button>
+                </div>
+            </section>
+
+            <footer className="border-t border-border">
+                <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-8 text-sm text-faint sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <Logo />
+                    <p>© {new Date().getFullYear()} RouteOps. Map data © OpenStreetMap contributors.</p>
+                </div>
             </footer>
         </div>
     );

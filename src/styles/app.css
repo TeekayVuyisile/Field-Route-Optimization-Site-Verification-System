@@ -1,28 +1,10 @@
 /* ==========================================================================
-   RouteOps styles entry
-   --------------------------------------------------------------------------
-   Layer order matters. CSS outside any @layer beats ALL layered CSS, so
-   Bootstrap and the pre-Tailwind stylesheets go in a `legacy` layer BELOW
-   Tailwind's components/utilities: on new pages Tailwind always wins.
-   Bootstrap and the old stylesheets share that ONE layer, in their original
-   load order, so they still resolve against each other by specificity as
-   before (separate layers would let e.g. index.css's `a { color }` beat
-   Bootstrap's `.btn-primary`). Removed once every page is migrated.
+   RouteOps styles entry: Tailwind v4 plus the design tokens below.
+   Third-party CSS sits in the `components` layer so utilities still win;
+   Leaflet's stylesheet is imported by the map components.
    ========================================================================== */
-@layer theme, base, legacy, components, utilities;
-
 @import 'tailwindcss';
-/* Bootstrap + toastify: src/styles/legacy.css, imported right after this */
-
-/* Tailwind's preflight makes every svg `display: block`; Bootstrap never set
-   it, so on not-yet-migrated pages icons jumped onto their own line above
-   button labels. Restore inline icons everywhere outside migrated `.ui` UI. */
-@layer legacy {
-    svg:not(.ui *) {
-        display: inline;
-        vertical-align: -0.125em;
-    }
-}
+@import 'react-toastify/dist/ReactToastify.css' layer(components);
 
 /* Dark mode follows a `.dark` class on <html> (set by the theme toggle) */
 @custom-variant dark (&:where(.dark, .dark *));
@@ -66,6 +48,7 @@
 }
 
 :root {
+    color-scheme: light;
     --ro-canvas: #F8FAFC;
     --ro-surface: #FFFFFF;
     --ro-surface-2: #F1F5F9;
@@ -114,22 +97,20 @@
     --ro-danger-soft: rgb(251 113 133 / 0.14);
 }
 
+/* Toasts follow the theme (toastify's own variables, unlayered so they win) */
+:root {
+    --toastify-color-light: var(--ro-surface);
+    --toastify-text-color-light: var(--ro-fg);
+    --toastify-font-family: var(--font-sans);
+    --toastify-color-info: var(--ro-accent);
+    --toastify-color-success: var(--ro-success);
+    --toastify-color-warning: var(--ro-warning);
+    --toastify-color-error: var(--ro-danger);
+}
+
 @keyframes fade-in {
     from { opacity: 0; transform: translateY(4px); }
     to { opacity: 1; transform: none; }
-}
-
-/* The legacy layer sits ABOVE Tailwind's preflight (so old pages keep their
-   look), which means its element defaults (blue underlined links, heading
-   colours and weights, paragraph margins) would leak into new UI.
-   Migrated pages and the new shell carry `.ui`; inside it, preflight's
-   defaults are restored. Removed together with Bootstrap. */
-@layer components {
-    .ui :where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd, ul, ol, label) { margin: 0; }
-    .ui :where(h1, h2, h3, h4, h5, h6) { font-size: inherit; font-weight: inherit; line-height: inherit; color: inherit; }
-    .ui :where(ul, ol) { padding: 0; list-style: none; }
-    .ui :where(a) { color: inherit; text-decoration: inherit; }
-    .ui :where(button, input, select, textarea) { font: inherit; color: inherit; }
 }
 
 @layer base {
@@ -137,6 +118,18 @@
         -webkit-text-size-adjust: 100%;
         text-rendering: optimizeLegibility;
         -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+        min-width: 320px;
+        background-color: var(--ro-canvas);
+        color: var(--ro-fg);
+        font-family: var(--font-sans);
+    }
+
+    ::selection {
+        background: var(--ro-accent-soft);
+        color: var(--ro-fg);
     }
 
     /* Keyboard focus is always visible; mouse clicks don't leave rings */

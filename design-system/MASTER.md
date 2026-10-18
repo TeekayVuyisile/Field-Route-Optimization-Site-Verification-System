@@ -26,7 +26,7 @@ light and `.dark`:
 
 - **Deviation from the generated system:** it suggested Fira Code headings and
   an orange CTA. Kept **Plus Jakarta Sans** (existing brand) and a single blue
-  accent; amber is reserved for the "next stop" on the map.
+  accent. Map pins: next stop = accent, visited = success, others = faint.
 - Radius: `rounded-xl` controls, `rounded-2xl` cards, `rounded-full` badges.
 - Shadows: `shadow-card` (resting), `shadow-raised` (floating), `shadow-overlay` (dialogs).
 
@@ -44,7 +44,8 @@ light and `.dark`:
   tab bar (Trips, Map, New trip, Team) within thumb reach.
 - Content width `max-w-7xl`, side padding `px-4 sm:px-6`.
 
-## Migration (Phase 3)
-Migrated pages/components carry the `ui` class (restores clean defaults over
-the Bootstrap reboot). Bootstrap + pre-Tailwind CSS live in the `legacy` layer
-and are deleted in the last Phase 3 chunk.
+## Theme
+Light and dark via a `.dark` class on `<html>`: follows the system until the
+user picks one with the top-bar toggle (saved per device, `src/lib/theme.js`).
+`index.html` applies the saved theme before first paint. Use semantic tokens,
+never raw colours, so both themes work; `bg-ink` bands stay dark in both.

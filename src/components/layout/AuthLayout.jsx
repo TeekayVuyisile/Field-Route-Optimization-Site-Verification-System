@@ -11,7 +11,7 @@ const POINTS = [
  * route illustration echoes the logo mark.
  */
 const AuthLayout = ({ eyebrow, headline, children }) => (
-    <div className="ui grid min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+    <div className="grid min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
         <aside className="relative hidden overflow-hidden bg-ink text-white lg:flex lg:flex-col lg:justify-center lg:px-14 xl:px-20">
             <div
                 className="pointer-events-none absolute -top-32 -left-24 size-[28rem] rounded-full bg-accent/25 blur-3xl"
