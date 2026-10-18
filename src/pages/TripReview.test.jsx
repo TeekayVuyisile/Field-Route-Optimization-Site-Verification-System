@@ -81,6 +81,21 @@ describe('TripReview', () => {
         expect(row).toHaveTextContent('Reason: Pin is at the depot');
     });
 
+    it("shows each site's checklist answers and calls out missing required ones", async () => {
+        const checklist = { name: 'Audit', items: [
+            { id: 'power', label: 'Power on', type: 'check', required: true },
+            { id: 'ssid', label: 'SSID seen', type: 'text', required: true },
+        ] };
+        fetchTripWithSites.mockResolvedValue({
+            trip: { ...TRIP, checklist },
+            sites: [{ ...SITES[0], checklist_answers: { power: true } }],
+        });
+        renderReport();
+        const [row] = within(await screen.findByRole('region', { name: 'Verification log' })).getAllByRole('listitem');
+        expect(row).toHaveTextContent('Power onYes');
+        expect(row).toHaveTextContent('SSID seenMissing');
+    });
+
     it('opens the map with this trip loaded', async () => {
         renderReport();
         fireEvent.click(await screen.findByRole('button', { name: 'Open map' }));

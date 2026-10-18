@@ -7,6 +7,8 @@ import { Badge } from '../ui/primitives';
 import { cn } from '../ui/cn';
 import { formatDistance } from '../../lib/format';
 import PhotoStrip from './PhotoStrip';
+import ChecklistForm from './ChecklistForm';
+import { missingRequired } from '../../features/checklists/checklist';
 
 const tile = 'flex h-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-border bg-surface text-xs font-semibold text-fg transition-colors duration-200 hover:bg-surface-2';
 
@@ -40,10 +42,14 @@ const CheckInSummary = ({ site }) => {
  * The selected stop (the next one by default) with the actions a driver
  * needs on arrival. Big targets: this is used one-handed, often in a car.
  */
-const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, photos = [], queuedPhotos = [], onOpenPhoto, onToggleChecked, onPhoto, onNotesChange, onEdit, onDelete }) => {
+const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, photos = [], queuedPhotos = [], onOpenPhoto, checklist, onAnswer, onToggleChecked, onPhoto, onNotesChange, onEdit, onDelete }) => {
     // Render with key={site.id}: notes start open when the site has some
     const [showNotes, setShowNotes] = useState(() => Boolean(site.notes));
     const notesId = useId();
+    const missingId = useId();
+    // Queued photos count too: a photo taken offline satisfies a photo item
+    const photoCount = photos.length + queuedPhotos.length;
+    const missing = missingRequired(checklist, site.checklist_answers, photoCount);
 
     return (
         <div className="space-y-4">
@@ -115,14 +121,25 @@ const StopCard = ({ site, number, total, isNext, distance, preparingPhoto, photo
                 />
             )}
 
+            {checklist && (
+                <ChecklistForm checklist={checklist} answers={site.checklist_answers} photoCount={photoCount} onAnswer={onAnswer} />
+            )}
+
             {site.is_checked ? (
                 <Button variant="secondary" size="lg" className="w-full" onClick={onToggleChecked}>
                     <LuUndo2 className="size-5" aria-hidden /> Undo check-in
                 </Button>
             ) : (
-                <Button size="lg" className="w-full" onClick={onToggleChecked}>
-                    <LuCheck className="size-5" aria-hidden /> Check in
-                </Button>
+                <div className="space-y-2">
+                    {missing.length > 0 && (
+                        <p id={missingId} className="text-sm text-muted">
+                            Finish {missing.length === 1 ? 'this' : `these ${missing.length}`} to check in: {missing.map((i) => i.label).join(', ')}
+                        </p>
+                    )}
+                    <Button size="lg" className="w-full" onClick={onToggleChecked} disabled={missing.length > 0} aria-describedby={missing.length > 0 ? missingId : undefined}>
+                        <LuCheck className="size-5" aria-hidden /> Check in
+                    </Button>
+                </div>
             )}
         </div>
     );

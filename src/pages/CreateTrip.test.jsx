@@ -16,6 +16,8 @@ vi.mock('../features/trips/tripRepository', () => ({
     createTripWithSites: (...a) => createTripWithSites(...a),
     updateTrip: (...a) => updateTrip(...a),
 }));
+const TEMPLATE = { id: 'c1', name: 'WiFi audit', items: [{ id: 'power', label: 'Power on', type: 'check', required: true }] };
+vi.mock('../features/checklists/checklistRepository', () => ({ fetchChecklistTemplates: async () => [TEMPLATE] }));
 vi.mock('../features/team/teamRepository', () => ({
     fetchTeamMembers: async () => [{ user_id: 'me', email: 'me@x.co' }, { user_id: 'agent', email: 'agent@x.co' }],
 }));
@@ -100,6 +102,19 @@ describe('New trip wizard', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Remove B' }));
         expect(screen.getByRole('button', { name: /Continue/ })).toBeEnabled();
+    });
+
+    it('gives the trip its own copy of the chosen checklist', async () => {
+        renderWizard();
+        fireEvent.change(screen.getByLabelText('Trip name'), { target: { value: 'Audit' } });
+        fireEvent.click(screen.getByRole('button', { name: /Add sites by hand/ }));
+        await addSiteByHand('Tower 1', '-26.2', '28.0');
+        fireEvent.click(await screen.findByRole('button', { name: /Continue/ }));
+
+        fireEvent.change(await screen.findByLabelText('Checklist'), { target: { value: 'c1' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Save and open map' }));
+
+        await waitFor(() => expect(updateTrip).toHaveBeenCalledWith('t1', { checklist: { name: 'WiFi audit', items: TEMPLATE.items } }));
     });
 
     it('agents save without an assignee picker', async () => {

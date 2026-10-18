@@ -13,6 +13,7 @@ import { Field, Input, Select } from '../components/ui/Field';
 import { Alert, Badge, Card, PageHeader, Skeleton } from '../components/ui/primitives';
 import { ConfirmDialog } from '../components/ui/Dialog';
 import CheckinRadiusCard from '../components/team/CheckinRadiusCard';
+import ChecklistsCard from '../components/team/ChecklistsCard';
 
 const ROLE_LABELS = { manager: 'Manager', agent: 'Field agent' };
 
@@ -231,6 +232,7 @@ const Team = () => {
                             </div>
                         )}
                     </Card>
+                    <ChecklistsCard orgId={orgId} />
                     <CheckinRadiusCard
                         key={membership.checkinRadiusM}
                         orgId={orgId}

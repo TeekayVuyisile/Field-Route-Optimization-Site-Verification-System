@@ -6,6 +6,7 @@ vi.mock('../context/useAuth', () => ({ useAuth: () => ({ user: { id: 'me' } }) }
 vi.mock('../context/useTeam', () => ({ useTeam: () => teamValue }));
 
 const fetchPendingInvitations = vi.fn();
+vi.mock('../features/checklists/checklistRepository', () => ({ fetchChecklistTemplates: async () => [] }));
 vi.mock('../features/team/teamRepository', () => ({
     fetchTeamMembers: async () => [
         { user_id: 'me', role: 'manager', email: 'me@x.co', created_at: '2026-10-01' },

@@ -702,6 +702,10 @@ const MapView = () => {
                                 photos={photos.filter((p) => p.site_id === selectedSite.id)}
                                 queuedPhotos={queuedPhotos.filter((p) => p.siteId === selectedSite.id)}
                                 onOpenPhoto={(index) => setViewer({ siteId: selectedSite.id, index, key: Date.now() })}
+                                checklist={currentTrip.checklist}
+                                onAnswer={(itemId, value) => handleUpdateSite(selectedSite.id, {
+                                    checklist_answers: { ...selectedSite.checklist_answers, [itemId]: value },
+                                })}
                                 onToggleChecked={() => handleToggleChecked(selectedSite)}
                                 onPhoto={(file) => handleCapturePhoto(selectedSite.id, file)}
                                 onNotesChange={(notes) => handleUpdateSite(selectedSite.id, { notes })}
