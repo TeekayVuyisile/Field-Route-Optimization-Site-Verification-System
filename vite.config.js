@@ -84,8 +84,9 @@ const pwa = VitePWA({
     navigateFallback: '/index.html',
     navigateFallbackDenylist: [/^\/api\//],
     globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
-    // SheetJS (425 kB) is only for Excel imports: cached on first use instead
-    globIgnores: ['**/xlsx-*.js'],
+    // SheetJS (425 kB, Excel imports) and the PDF library (1.2 MB, reports)
+    // aren't needed by most visits: cached on first use instead
+    globIgnores: ['**/xlsx-*.js', '**/renderTripPdf-*.js'],
     runtimeCaching: [
       {
         urlPattern: ({ url }) => /^([abc]\.)?tile\.openstreetmap\.org$/.test(url.hostname),
@@ -102,7 +103,7 @@ const pwa = VitePWA({
         options: { cacheName: 'fonts', expiration: { maxEntries: 20 }, cacheableResponse: { statuses: [0, 200] } },
       },
       {
-        urlPattern: ({ url, sameOrigin }) => sameOrigin && /\/assets\/xlsx-.*\.js$/.test(url.pathname),
+        urlPattern: ({ url, sameOrigin }) => sameOrigin && /\/assets\/(xlsx|renderTripPdf)-.*\.js$/.test(url.pathname),
         handler: 'CacheFirst',
         options: { cacheName: 'lazy-chunks', expiration: { maxEntries: 5 } },
       },
@@ -112,6 +113,9 @@ const pwa = VitePWA({
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), vercelApiDev(), pwa],
+  // The PDF library is one 1.2 MB lazy chunk, loaded only when a report is
+  // exported; everything users load up front stays far below this
+  build: { chunkSizeWarningLimit: 1300 },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.js'],
