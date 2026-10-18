@@ -16,6 +16,7 @@ import {
 } from 'react-icons/fa';
 import { toast } from 'react-toastify';
 import useTripStore from '../store/useTripStore';
+import { getSignedPhotoUrls } from '../features/sites/siteRepository';
 
 const statTileVariants = {
     hidden: { opacity: 0, y: 14 },
@@ -70,7 +71,17 @@ const TripReview = () => {
                     .in('site_id', siteIds);
 
                 if (imagesError) throw imagesError;
-                setImages(imagesData);
+
+                // Signed URLs keep photos viewable once the bucket is private.
+                // A failure here shouldn't hide the rest of the report.
+                let urls = new Map();
+                try {
+                    urls = await getSignedPhotoUrls(imagesData.map(img => img.storage_path));
+                } catch (urlError) {
+                    console.error('Could not sign photo URLs:', urlError);
+                    toast.warn('Photos could not be loaded right now.');
+                }
+                setImages(imagesData.map(img => ({ ...img, url: urls.get(img.storage_path) ?? null })));
 
             } catch (error) {
                 console.error('Error fetching trip data:', error.message);
@@ -160,26 +171,25 @@ const TripReview = () => {
                 return (
                     <div className="d-flex gap-1 flex-wrap">
                         {siteImages.length > 0 ? (
-                            siteImages.map(img => {
-                                // Construct public URL (Note: Bucket must be public or use signed URLs)
-                                // Since we kept it private, we use the storage.from().getPublicUrl() or custom downloader
-                                // For simplicity in review, we'll fetch signed URLs or a direct loader
-                                const { data } = supabase.storage.from('site-photos').getPublicUrl(img.storage_path);
-                                return (
-                                    <div 
-                                        key={img.id} 
+                            siteImages.map(img => (
+                                img.url ? (
+                                    <div
+                                        key={img.id}
                                         className="position-relative cursor-pointer"
-                                        onClick={() => { setSelectedImage({ ...img, url: data.publicUrl }); setShowGallery(true); }}
+                                        onClick={() => { setSelectedImage(img); setShowGallery(true); }}
                                         style={{ width: '40px', height: '40px' }}
                                     >
-                                        <Image 
-                                            src={data.publicUrl} 
-                                            thumbnail 
+                                        <Image
+                                            src={img.url}
+                                            alt={`Photo of ${row.original.name}`}
+                                            thumbnail
                                             className="w-100 h-100 object-fit-cover"
                                         />
                                     </div>
-                                );
-                            })
+                                ) : (
+                                    <span key={img.id} className="text-muted small">Photo unavailable</span>
+                                )
+                            ))
                         ) : (
                             <span className="text-muted small">No photos</span>
                         )}
