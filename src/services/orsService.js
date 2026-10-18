@@ -1,21 +1,70 @@
-import axios from 'axios';
 import { calculateDistance } from '../lib/geo';
+import { supabase } from '../lib/supabase';
+import { chunkWaypoints, mergeDirections } from '../features/navigation/routeChunks';
 
-const ORS_API_KEY = import.meta.env.VITE_ORS_API_KEY;
-const BASE_URL = 'https://api.openrouteservice.org';
+// ORS calls go through our own /api/ors/* functions, which hold the API key
+// server-side and check the user's Supabase session.
 
-const orsApi = axios.create({
-    baseURL: BASE_URL,
-    headers: {
-        'Authorization': ORS_API_KEY,
-        'Content-Type': 'application/json'
+export const ORS_MAX_JOBS = 70;
+const MAX_RETRIES = 2;
+const MAX_RETRY_WAIT_MS = 5000;
+
+export class RoutingError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.name = 'RoutingError';
+        this.status = status;
     }
-});
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const retryWaitMs = (response, attempt) => {
+    const retryAfter = Number(response?.headers.get('retry-after'));
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 500 * 3 ** attempt;
+    return Math.min(wait, MAX_RETRY_WAIT_MS);
+};
+
+/**
+ * POSTs to an /api/ors endpoint. Network failures, 429s and 5xx responses
+ * are retried with backoff (honouring Retry-After); other errors throw.
+ */
+const callRoutingApi = async (endpoint, body) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new RoutingError('Sign in required', 401);
+
+    for (let attempt = 0; ; attempt++) {
+        let response;
+        try {
+            response = await fetch(`/api/ors/${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify(body)
+            });
+        } catch (networkError) {
+            if (attempt >= MAX_RETRIES) throw new RoutingError(`Routing service unreachable: ${networkError.message}`, 0);
+            await sleep(retryWaitMs(null, attempt));
+            continue;
+        }
+
+        if (response.ok) return response.json();
+
+        const retryable = response.status === 429 || response.status >= 500;
+        if (!retryable || attempt >= MAX_RETRIES) {
+            const payload = await response.json().catch(() => ({}));
+            throw new RoutingError(payload.error || `Routing request failed (${response.status})`, response.status);
+        }
+        await sleep(retryWaitMs(response, attempt));
+    }
+};
 
 /**
  * Fallback: Simple Nearest Neighbor algorithm using Haversine
  * @param {Object} start {lat, lng}
- * @param {Array} sites 
+ * @param {Array} sites
  * @returns {Array} Ordered sites
  */
 export const getNearestNeighborRoute = (start, sites) => {
@@ -55,63 +104,34 @@ export const getNearestNeighborRoute = (start, sites) => {
 export const getOptimizedRoute = async (start, sites) => {
     if (!start || sites.length === 0) return [];
 
-    // ORS Limit is 70 for optimization. If more, use fallback.
-    if (sites.length > 70) {
+    // ORS optimization accepts at most 70 jobs; use the local heuristic above that
+    if (sites.length > ORS_MAX_JOBS) {
         console.warn(`Large dataset (${sites.length} sites). Using local nearest-neighbor fallback.`);
         return getNearestNeighborRoute(start, sites);
     }
 
-    const jobs = sites.map((site, index) => ({
-        id: index,
-        location: [site.longitude, site.latitude]
-    }));
+    const { order } = await callRoutingApi('optimize', {
+        start: [start.lng, start.lat],
+        jobs: sites.map((site) => [site.longitude, site.latitude])
+    });
 
-    const body = {
-        jobs: jobs,
-        vehicles: [
-            {
-                id: 1,
-                profile: 'driving-car',
-                start: [start.lng, start.lat]
-            }
-        ]
-    };
-
-    try {
-        const response = await orsApi.post('/optimization', body);
-        const route = response.data.routes[0];
-        
-        // Map the result back to our site objects based on the job index
-        const orderedSiteIndices = route.steps
-            .filter(step => step.type === 'job')
-            .map(step => step.id);
-            
-        return orderedSiteIndices.map(idx => sites[idx]);
-    } catch (error) {
-        console.error('ORS Optimization Error:', error.response?.data || error.message);
-        throw error;
-    }
+    // The server appends unroutable jobs, but guard anyway: never drop a site
+    const seen = new Set(order);
+    const missing = sites.map((_, i) => i).filter((i) => !seen.has(i));
+    return [...order, ...missing].map((i) => sites[i]);
 };
 
 /**
- * Get route directions with full step-by-step instructions
+ * Get route directions with full step-by-step instructions. Routes longer
+ * than the ORS per-request waypoint limit are fetched in chunks and merged.
  * @param {Array} coordinates Array of [lng, lat]
- * @returns {Promise<Object>} Directions object with geometry and steps
+ * @returns {Promise<Object>} GeoJSON FeatureCollection with steps
  */
 export const getDirections = async (coordinates) => {
-    const body = {
-        coordinates: coordinates,
-        instructions: true,
-        units: 'm',
-        preference: 'recommended',
-        radiuses: coordinates.map(() => -1) // -1 means no limit: find the nearest road regardless of distance
-    };
-
-    try {
-        const response = await orsApi.post('/v2/directions/driving-car/geojson', body);
-        return response.data; // This returns a GeoJSON FeatureCollection
-    } catch (error) {
-        console.error('ORS Directions Error:', error.response?.data || error.message);
-        throw error;
+    const results = [];
+    // Sequential, not parallel: keeps us well inside the per-user rate limit
+    for (const chunk of chunkWaypoints(coordinates)) {
+        results.push(await callRoutingApi('directions', { coordinates: chunk }));
     }
+    return mergeDirections(results);
 };
