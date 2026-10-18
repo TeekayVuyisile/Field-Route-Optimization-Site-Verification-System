@@ -239,7 +239,7 @@ const Dashboard = () => {
                 onOpenChange={(open) => { if (!open) setTripToDelete(null); }}
                 title="Delete this trip?"
                 description={tripToDelete
-                    ? `"${tripToDelete.title}" and its ${countLabel(tripToDelete.siteCount, 'site')}, notes and photo records will be removed for everyone on the team. This can't be undone.`
+                    ? `"${tripToDelete.title}" and its ${countLabel(tripToDelete.siteCount, 'site')}, notes and photos will be deleted for everyone on the team. This can't be undone.`
                     : ''}
                 confirmLabel="Delete trip"
                 loading={deleting}

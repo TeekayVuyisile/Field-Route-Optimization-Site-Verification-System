@@ -1,4 +1,5 @@
 import { supabase } from '../../lib/supabase';
+import { removePhotoFiles } from '../sites/siteRepository';
 
 /**
  * Supabase reads/writes for whole trips. Functions throw on error.
@@ -54,6 +55,14 @@ export const fetchTripsWithProgress = async () => {
 };
 
 export const deleteTrip = async (tripId) => {
+    // Photo files first: the trip's site_images rows go with it (cascade)
+    const { data: photos, error: lookupError } = await supabase
+        .from('site_images')
+        .select('storage_path, thumb_path, sites!inner(trip_id)')
+        .eq('sites.trip_id', tripId);
+    if (lookupError) throw lookupError;
+    await removePhotoFiles(photos ?? []);
+
     // .select() so an RLS-blocked delete (0 rows) is reported, not silent
     const { data, error } = await supabase.from('trips').delete().eq('id', tripId).select('id');
     if (error) throw error;

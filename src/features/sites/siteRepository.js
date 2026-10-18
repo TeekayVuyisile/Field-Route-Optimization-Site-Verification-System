@@ -10,7 +10,26 @@ export const updateSite = async (siteId, updates) => {
     if (error) throw error;
 };
 
+/**
+ * Deletes photo files (and thumbnails) in batches. Called BEFORE deleting a
+ * site or trip: deleting the row cascades its site_images records, after
+ * which the files can't be found (or, for a manager, even deleted) any more.
+ * Throws if storage refuses, so the caller stops before orphaning files.
+ */
+export const removePhotoFiles = async (photos) => {
+    const paths = photos.flatMap((photo) => [photo.storage_path, photo.thumb_path]).filter(Boolean);
+    for (let i = 0; i < paths.length; i += 100) {
+        const { error } = await supabase.storage.from('site-photos').remove(paths.slice(i, i + 100));
+        if (error) throw error;
+    }
+};
+
 export const deleteSite = async (siteId) => {
+    const { data: photos, error: lookupError } = await supabase
+        .from('site_images').select('storage_path, thumb_path').eq('site_id', siteId);
+    if (lookupError) throw lookupError;
+    await removePhotoFiles(photos ?? []);
+
     const { error } = await supabase.from('sites').delete().eq('id', siteId);
     if (error) throw error;
 };
@@ -159,6 +178,37 @@ export const deleteSitePhoto = async (photo) => {
 /** The original file, for "Download" */
 export const downloadSitePhoto = async (photo) => {
     const { data, error } = await supabase.storage.from('site-photos').download(photo.storage_path);
+    if (error) throw error;
+    return data;
+};
+
+/** Photos from before thumbnails existed (RLS: a manager sees the team's) */
+export const fetchPhotosWithoutThumbnails = async () => {
+    const { data, error } = await supabase
+        .from('site_images')
+        .select('id, storage_path')
+        .is('thumb_path', null)
+        .order('created_at')
+        .limit(1000);
+    if (error) throw error;
+    return data;
+};
+
+/**
+ * Stores a thumbnail for an older photo in the CALLER's folder (storage only
+ * lets users write there) and attaches it with set_photo_thumbnail (0008).
+ * Removes the uploaded file again if the database won't attach it.
+ * @returns {Promise<boolean>} false if the photo already had one or isn't the caller's to change
+ */
+export const attachThumbnail = async ({ photoId, userId, blob }) => {
+    const path = `${userId}/thumbs/${photoId}.jpg`;
+    const { error: uploadError } = await supabase.storage
+        .from('site-photos')
+        .upload(path, blob, { contentType: 'image/jpeg' });
+    if (uploadError && !isAlreadyStored(uploadError)) throw uploadError;
+
+    const { data, error } = await supabase.rpc('set_photo_thumbnail', { p_photo_id: photoId, p_thumb_path: path });
+    if (error || !data) await supabase.storage.from('site-photos').remove([path]);
     if (error) throw error;
     return data;
 };

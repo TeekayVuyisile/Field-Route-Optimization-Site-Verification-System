@@ -14,6 +14,7 @@ import { Alert, Badge, Card, PageHeader, Skeleton } from '../components/ui/primi
 import { ConfirmDialog } from '../components/ui/Dialog';
 import CheckinRadiusCard from '../components/team/CheckinRadiusCard';
 import ChecklistsCard from '../components/team/ChecklistsCard';
+import ThumbnailBackfillCard from '../components/team/ThumbnailBackfillCard';
 
 const ROLE_LABELS = { manager: 'Manager', agent: 'Field agent' };
 
@@ -239,6 +240,7 @@ const Team = () => {
                         radius={membership.checkinRadiusM}
                         onSaved={refreshTeam}
                     />
+                    <ThumbnailBackfillCard userId={user.id} />
                     </div>
                 )}
             </div>
