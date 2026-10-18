@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:db": "bash scripts/test-db.sh",
     "preview": "vite preview"
   },
   "dependencies": {
