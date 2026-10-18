@@ -115,5 +115,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.js'],
+    // Tests never use the developer's .env: CI has none, and a test that
+
+    env: {
+      VITE_SUPABASE_URL: 'http://127.0.0.1:9',
+      VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+    },
   },
 })
