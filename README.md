@@ -2,6 +2,8 @@
 
 ## Professional Field Operations & Compliance System
 
+**[Try the live demo](https://field-route-optimization-site-verif.vercel.app/)**: press *Try the live demo* for a private sandbox (no sign-up) with sample trips, a manager and a field agent account you can switch between, flagged check-ins and checklists. Each sandbox is deleted after 24 hours.
+
 ---
 
 # 1. Project Overview

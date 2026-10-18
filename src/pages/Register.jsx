@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { LuMailCheck } from 'react-icons/lu';
 import { useAuth } from '../context/useAuth';
 import AuthLayout from '../components/layout/AuthLayout';
+import TryDemoButton from '../components/demo/TryDemoButton';
 import Button from '../components/ui/Button';
 import { Field, Input } from '../components/ui/Field';
 import { Alert } from '../components/ui/primitives';
@@ -112,6 +113,10 @@ const Register = () => {
                 Already have an account?{' '}
                 <Link to="/login" className="font-semibold text-accent hover:underline">Log in</Link>
             </p>
+            <div className="mt-8 border-t border-border pt-6 text-center">
+                <p className="text-sm text-muted">Just looking around?</p>
+                <TryDemoButton variant="secondary" className="mt-3 w-full">Try the demo, no sign-up</TryDemoButton>
+            </div>
         </AuthLayout>
     );
 };
